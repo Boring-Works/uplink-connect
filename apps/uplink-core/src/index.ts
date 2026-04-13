@@ -845,11 +845,135 @@ app.get("/internal/dashboard/v2", async (c) => {
 // ============ INTERACTIVE HTML DASHBOARD ============
 
 app.get("/dashboard", async (c) => {
-	const html = `<!DOCTYPE html>
+	const effectiveWindow = 86400;
+	
+	try {
+		const [
+			systemMetrics,
+			queueMetrics,
+			entityMetrics,
+			pipelineTopology,
+			components,
+			sources,
+			alerts,
+			recentRuns,
+		] = await Promise.all([
+			getSystemMetrics(c.env.CONTROL_DB),
+			getQueueMetrics(c.env.CONTROL_DB),
+			getEntityMetrics(c.env.CONTROL_DB),
+			getPipelineTopology(c.env, c.env.CONTROL_DB),
+			getComponentHealth(c.env),
+			c.env.CONTROL_DB.prepare("SELECT source_id, name, type, status FROM source_configs WHERE deleted_at IS NULL LIMIT 100").all(),
+			listActiveAlerts(c.env.CONTROL_DB, { limit: 10 }),
+			c.env.CONTROL_DB.prepare(`
+				SELECT status, COUNT(*) as count
+				FROM ingest_runs
+				WHERE created_at > unixepoch() - ?
+				GROUP BY status
+			`).bind(effectiveWindow).all(),
+		]);
+		
+		const runSummary: Record<string, number> = {};
+		for (const row of recentRuns.results ?? []) {
+			const status = (row as { status: string; count: number }).status;
+			const count = (row as { status: string; count: number }).count;
+			runSummary[status] = count;
+		}
+		
+		const previousWindowStart = Math.floor(Date.now() / 1000) - effectiveWindow * 2;
+		const previousWindowEnd = Math.floor(Date.now() / 1000) - effectiveWindow;
+		
+		const previousRuns = await c.env.CONTROL_DB.prepare(`
+			SELECT COUNT(*) as count FROM ingest_runs
+			WHERE created_at >= ? AND created_at < ?
+		`).bind(previousWindowStart, previousWindowEnd).first<{ count: number }>();
+		
+		const currentTotal = Object.values(runSummary).reduce((a, b) => a + b, 0);
+		const previousTotal = previousRuns?.count ?? 0;
+		const runTrend = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
+		
+		const data = {
+			timestamp: toIsoNow(),
+			windowSeconds: effectiveWindow,
+			summary: {
+				sources: {
+					total: sources.results?.length ?? 0,
+					active: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "active").length,
+					paused: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "paused").length,
+					degraded: components.filter(c => c.status === "degraded").length,
+				},
+				runs: {
+					current: runSummary,
+					trend: {
+						percentage: Math.round(runTrend),
+						direction: runTrend >= 0 ? "up" : "down",
+					},
+				},
+				alerts: {
+					active: alerts.length,
+					critical: alerts.filter(a => a.severity === "critical").length,
+					warning: alerts.filter(a => a.severity === "warning").length,
+				},
+			},
+			pipeline: pipelineTopology,
+			components: components.map(c => ({
+				id: c.id,
+				name: c.name,
+				status: c.status,
+				latencyMs: c.latencyMs,
+			})),
+			system: systemMetrics,
+			queue: queueMetrics,
+			entities: entityMetrics,
+			activeAlerts: alerts.slice(0, 5).map(a => ({
+				alertId: a.alertId,
+				alertType: a.alertType,
+				severity: a.severity,
+				message: a.message,
+				sourceId: a.sourceId,
+				createdAt: a.createdAt,
+			})),
+		};
+		
+		const overallStatus = data.pipeline?.overallHealth || 'unknown';
+		const totalSources = data.summary.sources.total;
+		const activeSources = data.summary.sources.active;
+		const pausedSources = data.summary.sources.paused;
+		const totalRuns24h = Object.values(data.summary.runs.current).reduce((a, b) => (a as number) + (b as number), 0) as number;
+		const runTrendDirection = data.summary.runs.trend.direction;
+		const runTrendPct = Math.abs(data.summary.runs.trend.percentage);
+		const queueLagMin = Math.round(data.queue.queueLagSeconds / 60);
+		const pendingCount = data.queue.pendingCount;
+		const processingCount = data.queue.processingCount;
+		const activeAlertCount = data.summary.alerts.active;
+		const criticalAlertCount = data.summary.alerts.critical;
+		const warningAlertCount = data.summary.alerts.warning;
+		
+		const pipelineStagesHtml = data.pipeline?.stages.map(stage => {
+			const rate = stage.outputRate ? `${stage.outputRate}/hr` : 'N/A';
+			return `<div class="stage ${stage.status}"><div class="stage-name">${escapeHtml(stage.name)}</div><div class="stage-rate">${rate}</div></div>`;
+		}).join('<span class="arrow">→</span>') || '';
+		
+		const componentsHtml = data.components?.map(comp => {
+			const icon = comp.status === 'healthy' ? '✓' : comp.status === 'degraded' ? '!' : '✗';
+			const bg = comp.status === 'healthy' ? '#065f46' : comp.status === 'degraded' ? '#92400e' : '#991b1b';
+			const latency = comp.latencyMs ? ` · ${comp.latencyMs}ms` : '';
+			return `<div class="component"><div class="component-icon" style="background: ${bg}">${icon}</div><div class="component-info"><div class="component-name">${escapeHtml(comp.name)}</div><div class="component-status">${comp.status}${latency}</div></div></div>`;
+		}).join('') || '';
+		
+		const alertsHtml = data.activeAlerts?.length > 0
+			? data.activeAlerts.map(alert => {
+				const date = new Date(alert.createdAt * 1000).toLocaleString();
+				return `<div class="alert-item ${alert.severity}"><div class="alert-title">${escapeHtml(alert.message)}</div><div class="alert-meta">${escapeHtml(alert.alertType)} · ${date}</div></div>`;
+			}).join('')
+			: '<div style="color: #64748b; padding: 20px;">No active alerts</div>';
+		
+		const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="refresh" content="30">
 	<title>Uplink Connect - System Dashboard</title>
 	<style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
@@ -887,7 +1011,7 @@ app.get("/dashboard", async (c) => {
 		.status-unhealthy { background: #991b1b; color: #f87171; }
 		.grid {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 			gap: 20px;
 			margin-bottom: 30px;
 		}
@@ -991,17 +1115,24 @@ app.get("/dashboard", async (c) => {
 			margin-top: 20px;
 		}
 		.refresh-btn:hover { background: #2563eb; }
-		.loading {
-			text-align: center;
-			padding: 40px;
+		.timestamp {
 			color: #64748b;
+			font-size: 0.875rem;
+			margin-top: 10px;
 		}
-		.error {
-			background: #991b1b;
-			color: #f87171;
-			padding: 16px;
-			border-radius: 8px;
-			margin: 20px 0;
+		.nav {
+			display: flex;
+			gap: 16px;
+			margin-bottom: 20px;
+			flex-wrap: wrap;
+		}
+		.nav a {
+			color: #60a5fa;
+			text-decoration: none;
+			font-size: 0.875rem;
+		}
+		.nav a:hover {
+			text-decoration: underline;
 		}
 	</style>
 </head>
@@ -1010,130 +1141,100 @@ app.get("/dashboard", async (c) => {
 		<header>
 			<h1>Uplink Connect</h1>
 			<p>Data Ingestion Platform Dashboard</p>
-			<span id="overall-status" class="status-badge status-healthy">Loading...</span>
+			<span class="status-badge status-${overallStatus}">${overallStatus}</span>
+			<div class="timestamp">Last updated: ${new Date().toLocaleString()} (auto-refreshes every 30s)</div>
 		</header>
 
-		<div id="content">
-			<div class="loading">Loading dashboard data...</div>
+		<div class="nav">
+			<a href="/dashboard">Dashboard</a>
+			<a href="/internal/dashboard/v2">API (v2)</a>
+			<a href="/internal/health/topology">Topology</a>
+			<a href="/internal/health/components">Components</a>
+			<a href="/internal/settings">Settings</a>
+			<a href="/internal/audit-log">Audit Log</a>
 		</div>
 
-		<button class="refresh-btn" onclick="loadDashboard()">Refresh Dashboard</button>
+		<div class="grid">
+			<div class="card">
+				<h3>Total Sources</h3>
+				<div class="metric">${totalSources}</div>
+				<div class="metric-sub">
+					<span class="trend-up">${activeSources} active</span> · ${pausedSources} paused
+				</div>
+			</div>
+			<div class="card">
+				<h3>Runs (24h)</h3>
+				<div class="metric">${totalRuns24h}</div>
+				<div class="metric-sub">
+					<span class="${runTrendDirection === 'up' ? 'trend-up' : 'trend-down'}">
+						${runTrendDirection === 'up' ? '↑' : '↓'} ${runTrendPct}%
+					</span> vs previous period
+				</div>
+			</div>
+			<div class="card">
+				<h3>Queue Lag</h3>
+				<div class="metric">${queueLagMin}m</div>
+				<div class="metric-sub">${pendingCount} pending · ${processingCount} processing</div>
+			</div>
+			<div class="card">
+				<h3>Active Alerts</h3>
+				<div class="metric">${activeAlertCount}</div>
+				<div class="metric-sub">
+					<span class="trend-down">${criticalAlertCount} critical</span> · ${warningAlertCount} warning
+				</div>
+			</div>
+		</div>
+
+		<div class="card">
+			<h3>Data Pipeline Flow</h3>
+			<div class="pipeline">
+				${pipelineStagesHtml}
+			</div>
+		</div>
+
+		<div class="grid">
+			<div class="card">
+				<h3>Component Health</h3>
+				<div class="components">
+					${componentsHtml}
+				</div>
+			</div>
+
+			<div class="card">
+				<h3>Active Alerts</h3>
+				<div class="alerts">
+					${alertsHtml}
+				</div>
+			</div>
+		</div>
+
+		<form action="/dashboard" method="GET">
+			<button type="submit" class="refresh-btn">Refresh Dashboard</button>
+		</form>
 	</div>
-
-	<script>
-		async function loadDashboard() {
-			const content = document.getElementById('content');
-			const statusBadge = document.getElementById('overall-status');
-			
-			content.innerHTML = '<div class="loading">Loading dashboard data...</div>';
-			
-			try {
-				const response = await fetch('/internal/dashboard/v2?window=86400');
-				if (!response.ok) throw new Error('Failed to load dashboard');
-				const data = await response.json();
-				
-				// Update overall status
-				const overallStatus = data.pipeline?.overallHealth || 'unknown';
-				statusBadge.className = 'status-badge status-' + overallStatus;
-				statusBadge.textContent = overallStatus;
-				
-				// Build dashboard HTML
-				content.innerHTML = \`
-					<div class="grid">
-						<div class="card">
-							<h3>Total Sources</h3>
-							<div class="metric">\${data.summary.sources.total}</div>
-							<div class="metric-sub">
-								<span class="trend-up">\${data.summary.sources.active} active</span> · 
-								\${data.summary.sources.paused} paused
-							</div>
-						</div>
-						<div class="card">
-							<h3>Runs (24h)</h3>
-							<div class="metric">\${Object.values(data.summary.runs.current).reduce((a,b)=>a+b,0)}</div>
-							<div class="metric-sub">
-								<span class="\${data.summary.runs.trend.direction === 'up' ? 'trend-up' : 'trend-down'}">
-									\${data.summary.runs.trend.direction === 'up' ? '↑' : '↓'} \${Math.abs(data.summary.runs.trend.percentage)}%
-								</span> vs previous period
-							</div>
-						</div>
-						<div class="card">
-							<h3>Queue Lag</h3>
-							<div class="metric">\${Math.round(data.queue.queueLagSeconds / 60)}m</div>
-							<div class="metric-sub">\${data.queue.pendingCount} pending · \${data.queue.processingCount} processing</div>
-						</div>
-						<div class="card">
-							<h3>Active Alerts</h3>
-							<div class="metric">\${data.summary.alerts.active}</div>
-							<div class="metric-sub">
-								<span class="trend-down">\${data.summary.alerts.critical} critical</span> · 
-								\${data.summary.alerts.warning} warning
-							</div>
-						</div>
-					</div>
-
-					<div class="card">
-						<h3>Data Pipeline Flow</h3>
-						<div class="pipeline">
-							\${data.pipeline?.stages.map(stage => \`
-								<div class="stage \${stage.status}">
-									<div class="stage-name">\${stage.name}</div>
-									<div class="stage-rate">\${stage.outputRate ? stage.outputRate + '/hr' : 'N/A'}</div>
-								</div>
-							\`).join('<span class="arrow">→</span>')}
-						</div>
-					</div>
-
-					<div class="grid">
-						<div class="card">
-							<h3>Component Health</h3>
-							<div class="components">
-								\${data.components?.map(comp => \`
-									<div class="component">
-										<div class="component-icon" style="background: \${comp.status === 'healthy' ? '#065f46' : comp.status === 'degraded' ? '#92400e' : '#991b1b'}">
-											\${comp.status === 'healthy' ? '✓' : comp.status === 'degraded' ? '!' : '✗'}
-										</div>
-										<div class="component-info">
-											<div class="component-name">\${comp.name}</div>
-											<div class="component-status">\${comp.status}\${comp.latencyMs ? ' · ' + comp.latencyMs + 'ms' : ''}</div>
-										</div>
-									</div>
-								\`).join('')}
-							</div>
-						</div>
-
-						<div class="card">
-							<h3>Active Alerts</h3>
-							<div class="alerts">
-								\${data.activeAlerts?.length > 0 
-									? data.activeAlerts.map(alert => \`
-										<div class="alert-item \${alert.severity}">
-											<div class="alert-title">\${alert.message}</div>
-											<div class="alert-meta">\${alert.alertType} · \${new Date(alert.createdAt * 1000).toLocaleString()}</div>
-										</div>
-									\`).join('')
-									: '<div style="color: #64748b; padding: 20px;">No active alerts</div>'
-								}
-							</div>
-						</div>
-					</div>
-				\`;
-			} catch (error) {
-				content.innerHTML = \`<div class="error">Error loading dashboard: \${error.message}</div>\`;
-			}
-		}
-
-		// Load on page load
-		loadDashboard();
-		
-		// Auto-refresh every 30 seconds
-		setInterval(loadDashboard, 30000);
-	</script>
 </body>
 </html>`;
-	
-	return c.html(html);
+		
+		return c.html(html);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return c.html(`<!DOCTYPE html>
+<html><body style="background:#0f172a;color:#f87171;padding:40px;font-family:sans-serif;">
+<h1>Dashboard Error</h1>
+<p>${escapeHtml(message)}</p>
+<a href="/dashboard" style="color:#60a5fa">Retry</a>
+</body></html>`, 500);
+	}
 });
+
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
 
 export default {
 	async fetch(request: Request, env: Env, executionCtx: ExecutionContext): Promise<Response> {
