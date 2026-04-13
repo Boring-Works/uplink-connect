@@ -1,0 +1,31 @@
+{
+	"name": "@uplink/core",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"typecheck": "tsc --noEmit",
+		"build": "tsc --noEmit",
+		"types": "wrangler types",
+		"d1:migrate:local": "wrangler d1 migrations apply uplink-control --local",
+		"d1:migrate:remote": "wrangler d1 migrations apply uplink-control --remote",
+		"test": "vitest run --config src/test/integration/vitest.config.ts",
+		"test:watch": "vitest watch --config src/test/integration/vitest.config.ts",
+		"test:ui": "vitest --ui --config src/test/integration/vitest.config.ts"
+	},
+	"dependencies": {
+		"@uplink/contracts": "workspace:*",
+		"@uplink/normalizers": "workspace:*",
+		"@uplink/source-adapters": "workspace:*",
+		"hono": "^4.12.8",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.8.15",
+		"typescript": "^5.8.3",
+		"vitest": "^3.0.9",
+		"wrangler": "^4.38.0"
+	}
+}

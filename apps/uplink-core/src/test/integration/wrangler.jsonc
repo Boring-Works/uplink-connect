@@ -1,0 +1,70 @@
+{
+	"compatibility_date": "2025-09-06",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "worker.ts",
+	"vars": {
+		"CORE_INTERNAL_KEY": "test-key"
+	},
+	"d1_databases": [
+		{
+			"binding": "CONTROL_DB",
+			"database_name": "uplink-control-test",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "../../../migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "RAW_BUCKET",
+			"bucket_name": "uplink-raw-test"
+		}
+	],
+	"analytics_engine_datasets": [
+		{
+			"binding": "OPS_METRICS",
+			"dataset": "uplink-ops-test"
+		}
+	],
+	"queues": {
+		"consumers": [
+			{
+				"queue": "uplink-ingest-test",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 3,
+				"dead_letter_queue": "uplink-ingest-dlq-test"
+			}
+		],
+		"producers": [
+			{
+				"binding": "INGEST_QUEUE",
+				"queue": "uplink-ingest-test"
+			},
+			{
+				"binding": "DLQ",
+				"queue": "uplink-ingest-dlq-test"
+			}
+		]
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SOURCE_COORDINATOR",
+				"class_name": "SourceCoordinator"
+			}
+		]
+	},
+	"workflows": [
+		{
+			"binding": "COLLECTION_WORKFLOW",
+			"name": "uplink-collection-test",
+			"class_name": "CollectionWorkflow"
+		}
+	],
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["SourceCoordinator"]
+		}
+	]
+}

@@ -1,0 +1,105 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "uplink-core",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-04-12",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": false,
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"head_sampling_rate": 1
+		},
+		"traces": {
+			"enabled": true,
+			"head_sampling_rate": 0.05
+		}
+	},
+	"d1_databases": [
+		{
+			"binding": "CONTROL_DB",
+			"database_name": "uplink-control",
+			"database_id": "<CONTROL_DB_ID>",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "RAW_BUCKET",
+			"bucket_name": "uplink-raw"
+		}
+	],
+	"vectorize_indexes": [
+		{
+			"binding": "ENTITY_INDEX",
+			"index_name": "uplink-entities"
+		}
+	],
+	"analytics_engine_datasets": [
+		{
+			"binding": "OPS_METRICS",
+			"dataset": "uplink-ops"
+		}
+	],
+	"services": [
+		{
+			"binding": "UPLINK_BROWSER",
+			"service": "uplink-browser"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SOURCE_COORDINATOR",
+				"class_name": "SourceCoordinator"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["SourceCoordinator"]
+		}
+	],
+	"workflows": [
+		{
+			"binding": "COLLECTION_WORKFLOW",
+			"name": "uplink-collection",
+			"class_name": "CollectionWorkflow"
+		},
+		{
+			"binding": "RETENTION_WORKFLOW",
+			"name": "uplink-retention",
+			"class_name": "RetentionWorkflow"
+		}
+	],
+	"queues": {
+		"consumers": [
+			{
+				"queue": "uplink-ingest",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30,
+				"max_retries": 3,
+				"dead_letter_queue": "uplink-ingest-dlq"
+			}
+		],
+		"producers": [
+			{
+				"binding": "INGEST_QUEUE",
+				"queue": "uplink-ingest"
+			},
+			{
+				"binding": "DLQ",
+				"queue": "uplink-ingest-dlq"
+			}
+		]
+	}
+	// Pipelines is in beta. Uncomment to enable analytics sink.
+	// See: https://developers.cloudflare.com/pipelines/
+	// "pipelines": [
+	// 	{
+	// 		"binding": "ANALYTICS_PIPELINE",
+	// 		"pipeline": "uplink-analytics"
+	// 	}
+	// ]
+}

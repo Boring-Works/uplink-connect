@@ -1,0 +1,31 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "uplink-edge",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-04-12",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"head_sampling_rate": 1
+		},
+		"traces": {
+			"enabled": true,
+			"head_sampling_rate": 0.05
+		}
+	},
+	"queues": {
+		"producers": [
+			{
+				"binding": "INGEST_QUEUE",
+				"queue": "uplink-ingest"
+			}
+		]
+	},
+	"services": [
+		{
+			"binding": "UPLINK_CORE",
+			"service": "uplink-core"
+		}
+	]
+}
