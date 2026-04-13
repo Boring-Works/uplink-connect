@@ -59,6 +59,96 @@ app.get("/v1/artifacts/:artifactId", async (c) => {
 	return proxyToCore(c.env, `/internal/artifacts/${encodeURIComponent(artifactId)}`);
 });
 
+// ============ NEW DASHBOARD & HEALTH ENDPOINTS ============
+
+// HTML Dashboard
+app.get("/dashboard", async (c) => {
+	return proxyToCore(c.env, "/dashboard");
+});
+
+// Dashboard API v2
+app.get("/v1/dashboard", async (c) => {
+	const window = c.req.query("window") ?? "86400";
+	return proxyToCore(c.env, `/internal/dashboard/v2?window=${encodeURIComponent(window)}`);
+});
+
+// Component health
+app.get("/v1/health/components", async (c) => {
+	return proxyToCore(c.env, "/internal/health/components");
+});
+
+// Pipeline topology
+app.get("/v1/health/topology", async (c) => {
+	return proxyToCore(c.env, "/internal/health/topology");
+});
+
+// Data flow metrics
+app.get("/v1/health/flow", async (c) => {
+	const window = c.req.query("window") ?? "3600";
+	return proxyToCore(c.env, `/internal/health/flow?window=${encodeURIComponent(window)}`);
+});
+
+// Source health timeline
+app.get("/v1/sources/:sourceId/health/timeline", async (c) => {
+	const sourceId = c.req.param("sourceId");
+	const window = c.req.query("window") ?? "3600";
+	return proxyToCore(c.env, `/internal/sources/${encodeURIComponent(sourceId)}/health/timeline?window=${encodeURIComponent(window)}`);
+});
+
+// Run trace
+app.get("/v1/runs/:runId/trace", async (c) => {
+	const runId = c.req.param("runId");
+	return proxyToCore(c.env, `/internal/runs/${encodeURIComponent(runId)}/trace`);
+});
+
+// Entity lineage
+app.get("/v1/entities/:entityId/lineage", async (c) => {
+	const entityId = c.req.param("entityId");
+	return proxyToCore(c.env, `/internal/entities/${encodeURIComponent(entityId)}/lineage`);
+});
+
+// Source run tree
+app.get("/v1/sources/:sourceId/runs/tree", async (c) => {
+	const sourceId = c.req.param("sourceId");
+	const limit = c.req.query("limit") ?? "50";
+	return proxyToCore(c.env, `/internal/sources/${encodeURIComponent(sourceId)}/runs/tree?limit=${encodeURIComponent(limit)}`);
+});
+
+// Settings
+app.get("/v1/settings", async (c) => {
+	return proxyToCore(c.env, "/internal/settings");
+});
+
+app.put("/v1/settings", async (c) => {
+	const body = await c.req.json().catch(() => ({}));
+	return proxyToCore(c.env, "/internal/settings", {
+		method: "PUT",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+});
+
+// Audit log
+app.get("/v1/audit-log", async (c) => {
+	const params = new URLSearchParams();
+	const limit = c.req.query("limit");
+	const offset = c.req.query("offset");
+	const resourceType = c.req.query("resourceType");
+	const actor = c.req.query("actor");
+	const fromDate = c.req.query("fromDate");
+	const toDate = c.req.query("toDate");
+	
+	if (limit) params.set("limit", limit);
+	if (offset) params.set("offset", offset);
+	if (resourceType) params.set("resourceType", resourceType);
+	if (actor) params.set("actor", actor);
+	if (fromDate) params.set("fromDate", fromDate);
+	if (toDate) params.set("toDate", toDate);
+	
+	const queryString = params.toString();
+	return proxyToCore(c.env, `/internal/audit-log${queryString ? "?" + queryString : ""}`);
+});
+
 async function proxyToCore(env: Env, path: string, init?: RequestInit): Promise<Response> {
 	const request = new Request(`https://uplink-core${path}`, {
 		method: init?.method ?? "GET",

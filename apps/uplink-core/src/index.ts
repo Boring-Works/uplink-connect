@@ -57,6 +57,14 @@ import {
 	getEntityMetrics,
 	getSystemMetrics,
 } from "./lib/metrics";
+import {
+	getComponentHealth,
+	getPipelineTopology,
+	getDataFlowMetrics,
+	getSourceHealthTimeline,
+} from "./lib/health-monitor";
+import { getSettings, saveSettings, logAuditEvent, getAuditLog } from "./lib/settings";
+import { getRunTrace, getEntityLineage, getSourceRunTree } from "./lib/tracing";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -612,6 +620,519 @@ app.post("/internal/notifications/test/:channel", async (c) => {
 	const body = await c.req.json().catch(() => ({}));
 	const result = await testNotificationChannel(c.env, channel, body.url);
 	return c.json(result, result.success ? 200 : 400);
+});
+
+// ============ HEALTH MONITORING & VISUAL PIPELINE ============
+
+// Get component health status
+app.get("/internal/health/components", async (c) => {
+	const components = await getComponentHealth(c.env);
+	return c.json({ components, timestamp: toIsoNow() });
+});
+
+// Get pipeline topology with flow rates
+app.get("/internal/health/topology", async (c) => {
+	const topology = await getPipelineTopology(c.env, c.env.CONTROL_DB);
+	return c.json(topology);
+});
+
+// Get data flow metrics
+app.get("/internal/health/flow", async (c) => {
+	const windowRaw = c.req.query("window") ?? "3600";
+	const windowSeconds = Number.parseInt(windowRaw, 10);
+	const metrics = await getDataFlowMetrics(
+		c.env.CONTROL_DB,
+		Number.isFinite(windowSeconds) ? windowSeconds : 3600,
+	);
+	return c.json(metrics);
+});
+
+// Get source health timeline
+app.get("/internal/sources/:sourceId/health/timeline", async (c) => {
+	const sourceId = c.req.param("sourceId");
+	const windowRaw = c.req.query("window") ?? "3600";
+	const windowSeconds = Number.parseInt(windowRaw, 10);
+	const timeline = await getSourceHealthTimeline(
+		c.env.CONTROL_DB,
+		sourceId,
+		Number.isFinite(windowSeconds) ? windowSeconds : 3600,
+	);
+	return c.json(timeline);
+});
+
+// ============ SETTINGS & CONFIGURATION ============
+
+// Get platform settings
+app.get("/internal/settings", async (c) => {
+	const settings = await getSettings(c.env);
+	return c.json(settings);
+});
+
+// Update platform settings
+app.put("/internal/settings", async (c) => {
+	const body = await c.req.json().catch(() => ({}));
+	const actor = c.req.header("x-actor-id") ?? "system";
+	
+	const updated = await saveSettings(c.env, body, actor);
+	
+	await logAuditEvent(c.env.CONTROL_DB, {
+		action: "settings.update",
+		actor,
+		resourceType: "settings",
+		details: { changedFields: Object.keys(body) },
+	});
+	
+	return c.json(updated);
+});
+
+// ============ AUDIT LOG ============
+
+// Get audit log
+app.get("/internal/audit-log", async (c) => {
+	const limit = Number.parseInt(c.req.query("limit") ?? "50", 10);
+	const offset = Number.parseInt(c.req.query("offset") ?? "0", 10);
+	const resourceType = c.req.query("resourceType") ?? undefined;
+	const actor = c.req.query("actor") ?? undefined;
+	const fromDate = c.req.query("fromDate") ?? undefined;
+	const toDate = c.req.query("toDate") ?? undefined;
+	
+	const result = await getAuditLog(c.env.CONTROL_DB, {
+		limit: Number.isFinite(limit) ? limit : 50,
+		offset: Number.isFinite(offset) ? offset : 0,
+		resourceType,
+		actor,
+		fromDate,
+		toDate,
+	});
+	
+	return c.json(result);
+});
+
+// ============ TRACING & LINEAGE ============
+
+// Get run trace (full run history with children, errors, artifacts)
+app.get("/internal/runs/:runId/trace", async (c) => {
+	const runId = c.req.param("runId");
+	const trace = await getRunTrace(c.env.CONTROL_DB, runId);
+	
+	if (!trace) {
+		return c.json({ error: "Run not found" }, 404);
+	}
+	
+	return c.json(trace);
+});
+
+// Get entity lineage
+app.get("/internal/entities/:entityId/lineage", async (c) => {
+	const entityId = c.req.param("entityId");
+	const lineage = await getEntityLineage(c.env.CONTROL_DB, entityId);
+	
+	if (!lineage) {
+		return c.json({ error: "Entity not found" }, 404);
+	}
+	
+	return c.json(lineage);
+});
+
+// Get source run tree (hierarchy of runs and replays)
+app.get("/internal/sources/:sourceId/runs/tree", async (c) => {
+	const sourceId = c.req.param("sourceId");
+	const limit = Number.parseInt(c.req.query("limit") ?? "50", 10);
+	const tree = await getSourceRunTree(
+		c.env.CONTROL_DB,
+		sourceId,
+		Number.isFinite(limit) ? limit : 50,
+	);
+	return c.json(tree);
+});
+
+// ============ ENHANCED DASHBOARD V2 ============
+
+app.get("/internal/dashboard/v2", async (c) => {
+	const windowRaw = c.req.query("window") ?? "86400";
+	const windowSeconds = Number.parseInt(windowRaw, 10);
+	const effectiveWindow = Number.isFinite(windowSeconds) ? windowSeconds : 86400;
+	
+	const [
+		systemMetrics,
+		queueMetrics,
+		entityMetrics,
+		pipelineTopology,
+		components,
+		sources,
+		alerts,
+		recentRuns,
+	] = await Promise.all([
+		getSystemMetrics(c.env.CONTROL_DB),
+		getQueueMetrics(c.env.CONTROL_DB),
+		getEntityMetrics(c.env.CONTROL_DB),
+		getPipelineTopology(c.env, c.env.CONTROL_DB),
+		getComponentHealth(c.env),
+		c.env.CONTROL_DB.prepare("SELECT source_id, name, type, status FROM source_configs WHERE deleted_at IS NULL LIMIT 100").all(),
+		listActiveAlerts(c.env.CONTROL_DB, { limit: 10 }),
+		c.env.CONTROL_DB.prepare(`
+			SELECT status, COUNT(*) as count
+			FROM ingest_runs
+			WHERE created_at > unixepoch() - ?
+			GROUP BY status
+		`).bind(effectiveWindow).all(),
+	]);
+	
+	const runSummary: Record<string, number> = {};
+	for (const row of recentRuns.results ?? []) {
+		const status = (row as { status: string; count: number }).status;
+		const count = (row as { status: string; count: number }).count;
+		runSummary[status] = count;
+	}
+	
+	// Calculate trends (compare with previous window)
+	const previousWindowStart = Math.floor(Date.now() / 1000) - effectiveWindow * 2;
+	const previousWindowEnd = Math.floor(Date.now() / 1000) - effectiveWindow;
+	
+	const previousRuns = await c.env.CONTROL_DB.prepare(`
+		SELECT COUNT(*) as count FROM ingest_runs
+		WHERE created_at >= ? AND created_at < ?
+	`).bind(previousWindowStart, previousWindowEnd).first<{ count: number }>();
+	
+	const currentTotal = Object.values(runSummary).reduce((a, b) => a + b, 0);
+	const previousTotal = previousRuns?.count ?? 0;
+	const runTrend = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
+	
+	return c.json({
+		timestamp: toIsoNow(),
+		windowSeconds: effectiveWindow,
+		summary: {
+			sources: {
+				total: sources.results?.length ?? 0,
+				active: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "active").length,
+				paused: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "paused").length,
+				degraded: components.filter(c => c.status === "degraded").length,
+			},
+			runs: {
+				current: runSummary,
+				trend: {
+					percentage: Math.round(runTrend),
+					direction: runTrend >= 0 ? "up" : "down",
+				},
+			},
+			alerts: {
+				active: alerts.length,
+				critical: alerts.filter(a => a.severity === "critical").length,
+				warning: alerts.filter(a => a.severity === "warning").length,
+			},
+		},
+		pipeline: pipelineTopology,
+		components: components.map(c => ({
+			id: c.id,
+			name: c.name,
+			status: c.status,
+			latencyMs: c.latencyMs,
+		})),
+		system: systemMetrics,
+		queue: queueMetrics,
+		entities: entityMetrics,
+		activeAlerts: alerts.slice(0, 5).map(a => ({
+			alertId: a.alertId,
+			alertType: a.alertType,
+			severity: a.severity,
+			message: a.message,
+			sourceId: a.sourceId,
+			createdAt: a.createdAt,
+		})),
+	});
+});
+
+// ============ INTERACTIVE HTML DASHBOARD ============
+
+app.get("/dashboard", async (c) => {
+	const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Uplink Connect - System Dashboard</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+			background: #0f172a;
+			color: #e2e8f0;
+			line-height: 1.6;
+		}
+		.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+		header {
+			background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+			padding: 30px;
+			border-radius: 12px;
+			margin-bottom: 30px;
+			border: 1px solid #475569;
+		}
+		header h1 {
+			font-size: 2rem;
+			background: linear-gradient(90deg, #60a5fa, #a78bfa);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			margin-bottom: 10px;
+		}
+		.status-badge {
+			display: inline-block;
+			padding: 6px 12px;
+			border-radius: 20px;
+			font-size: 0.875rem;
+			font-weight: 600;
+			text-transform: uppercase;
+		}
+		.status-healthy { background: #065f46; color: #34d399; }
+		.status-degraded { background: #92400e; color: #fbbf24; }
+		.status-unhealthy { background: #991b1b; color: #f87171; }
+		.grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+			gap: 20px;
+			margin-bottom: 30px;
+		}
+		.card {
+			background: #1e293b;
+			border-radius: 12px;
+			padding: 24px;
+			border: 1px solid #334155;
+		}
+		.card h3 {
+			color: #94a3b8;
+			font-size: 0.875rem;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			margin-bottom: 12px;
+		}
+		.metric {
+			font-size: 2.5rem;
+			font-weight: 700;
+			color: #f8fafc;
+		}
+		.metric-sub {
+			font-size: 0.875rem;
+			color: #64748b;
+			margin-top: 4px;
+		}
+		.trend-up { color: #34d399; }
+		.trend-down { color: #f87171; }
+		.pipeline {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			margin: 20px 0;
+			flex-wrap: wrap;
+		}
+		.stage {
+			background: #334155;
+			padding: 16px 24px;
+			border-radius: 8px;
+			text-align: center;
+			min-width: 120px;
+			border: 2px solid transparent;
+		}
+		.stage.healthy { border-color: #34d399; }
+		.stage.degraded { border-color: #fbbf24; }
+		.stage.unhealthy { border-color: #f87171; }
+		.stage-name { font-weight: 600; margin-bottom: 4px; }
+		.stage-rate { font-size: 0.75rem; color: #94a3b8; }
+		.arrow {
+			color: #64748b;
+			font-size: 1.5rem;
+		}
+		.alerts {
+			margin-top: 20px;
+		}
+		.alert-item {
+			background: #334155;
+			padding: 16px;
+			border-radius: 8px;
+			margin-bottom: 12px;
+			border-left: 4px solid;
+		}
+		.alert-item.critical { border-left-color: #f87171; }
+		.alert-item.warning { border-left-color: #fbbf24; }
+		.alert-title { font-weight: 600; margin-bottom: 4px; }
+		.alert-meta { font-size: 0.875rem; color: #64748b; }
+		.components {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+			gap: 12px;
+			margin-top: 20px;
+		}
+		.component {
+			background: #334155;
+			padding: 16px;
+			border-radius: 8px;
+			display: flex;
+			align-items: center;
+			gap: 12px;
+		}
+		.component-icon {
+			width: 40px;
+			height: 40px;
+			border-radius: 8px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 1.25rem;
+		}
+		.component-info { flex: 1; }
+		.component-name { font-weight: 600; font-size: 0.875rem; }
+		.component-status { font-size: 0.75rem; color: #64748b; }
+		.refresh-btn {
+			background: #3b82f6;
+			color: white;
+			border: none;
+			padding: 12px 24px;
+			border-radius: 8px;
+			cursor: pointer;
+			font-weight: 600;
+			margin-top: 20px;
+		}
+		.refresh-btn:hover { background: #2563eb; }
+		.loading {
+			text-align: center;
+			padding: 40px;
+			color: #64748b;
+		}
+		.error {
+			background: #991b1b;
+			color: #f87171;
+			padding: 16px;
+			border-radius: 8px;
+			margin: 20px 0;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<header>
+			<h1>Uplink Connect</h1>
+			<p>Data Ingestion Platform Dashboard</p>
+			<span id="overall-status" class="status-badge status-healthy">Loading...</span>
+		</header>
+
+		<div id="content">
+			<div class="loading">Loading dashboard data...</div>
+		</div>
+
+		<button class="refresh-btn" onclick="loadDashboard()">Refresh Dashboard</button>
+	</div>
+
+	<script>
+		async function loadDashboard() {
+			const content = document.getElementById('content');
+			const statusBadge = document.getElementById('overall-status');
+			
+			content.innerHTML = '<div class="loading">Loading dashboard data...</div>';
+			
+			try {
+				const response = await fetch('/internal/dashboard/v2?window=86400');
+				if (!response.ok) throw new Error('Failed to load dashboard');
+				const data = await response.json();
+				
+				// Update overall status
+				const overallStatus = data.pipeline?.overallHealth || 'unknown';
+				statusBadge.className = 'status-badge status-' + overallStatus;
+				statusBadge.textContent = overallStatus;
+				
+				// Build dashboard HTML
+				content.innerHTML = \`
+					<div class="grid">
+						<div class="card">
+							<h3>Total Sources</h3>
+							<div class="metric">\${data.summary.sources.total}</div>
+							<div class="metric-sub">
+								<span class="trend-up">\${data.summary.sources.active} active</span> · 
+								\${data.summary.sources.paused} paused
+							</div>
+						</div>
+						<div class="card">
+							<h3>Runs (24h)</h3>
+							<div class="metric">\${Object.values(data.summary.runs.current).reduce((a,b)=>a+b,0)}</div>
+							<div class="metric-sub">
+								<span class="\${data.summary.runs.trend.direction === 'up' ? 'trend-up' : 'trend-down'}">
+									\${data.summary.runs.trend.direction === 'up' ? '↑' : '↓'} \${Math.abs(data.summary.runs.trend.percentage)}%
+								</span> vs previous period
+							</div>
+						</div>
+						<div class="card">
+							<h3>Queue Lag</h3>
+							<div class="metric">\${Math.round(data.queue.queueLagSeconds / 60)}m</div>
+							<div class="metric-sub">\${data.queue.pendingCount} pending · \${data.queue.processingCount} processing</div>
+						</div>
+						<div class="card">
+							<h3>Active Alerts</h3>
+							<div class="metric">\${data.summary.alerts.active}</div>
+							<div class="metric-sub">
+								<span class="trend-down">\${data.summary.alerts.critical} critical</span> · 
+								\${data.summary.alerts.warning} warning
+							</div>
+						</div>
+					</div>
+
+					<div class="card">
+						<h3>Data Pipeline Flow</h3>
+						<div class="pipeline">
+							\${data.pipeline?.stages.map(stage => \`
+								<div class="stage \${stage.status}">
+									<div class="stage-name">\${stage.name}</div>
+									<div class="stage-rate">\${stage.outputRate ? stage.outputRate + '/hr' : 'N/A'}</div>
+								</div>
+							\`).join('<span class="arrow">→</span>')}
+						</div>
+					</div>
+
+					<div class="grid">
+						<div class="card">
+							<h3>Component Health</h3>
+							<div class="components">
+								\${data.components?.map(comp => \`
+									<div class="component">
+										<div class="component-icon" style="background: \${comp.status === 'healthy' ? '#065f46' : comp.status === 'degraded' ? '#92400e' : '#991b1b'}">
+											\${comp.status === 'healthy' ? '✓' : comp.status === 'degraded' ? '!' : '✗'}
+										</div>
+										<div class="component-info">
+											<div class="component-name">\${comp.name}</div>
+											<div class="component-status">\${comp.status}\${comp.latencyMs ? ' · ' + comp.latencyMs + 'ms' : ''}</div>
+										</div>
+									</div>
+								\`).join('')}
+							</div>
+						</div>
+
+						<div class="card">
+							<h3>Active Alerts</h3>
+							<div class="alerts">
+								\${data.activeAlerts?.length > 0 
+									? data.activeAlerts.map(alert => \`
+										<div class="alert-item \${alert.severity}">
+											<div class="alert-title">\${alert.message}</div>
+											<div class="alert-meta">\${alert.alertType} · \${new Date(alert.createdAt * 1000).toLocaleString()}</div>
+										</div>
+									\`).join('')
+									: '<div style="color: #64748b; padding: 20px;">No active alerts</div>'
+								}
+							</div>
+						</div>
+					</div>
+				\`;
+			} catch (error) {
+				content.innerHTML = \`<div class="error">Error loading dashboard: \${error.message}</div>\`;
+			}
+		}
+
+		// Load on page load
+		loadDashboard();
+		
+		// Auto-refresh every 30 seconds
+		setInterval(loadDashboard, 30000);
+	</script>
+</body>
+</html>`;
+	
+	return c.html(html);
 });
 
 export default {
