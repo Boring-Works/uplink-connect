@@ -108,6 +108,9 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 			};
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "Collection workflow failed";
+			
+			// Graceful degradation: Always try to record failure, but don't let it break the workflow
+			let failureRecorded = false;
 			try {
 				const snapshot = await recordCoordinatorFailure(coordinator, {
 					leaseToken: payload.leaseToken,
@@ -115,14 +118,26 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 					errorMessage,
 				});
 				await upsertRuntimeSnapshot(this.env.CONTROL_DB, snapshot);
+				failureRecorded = true;
 			} catch (coordinatorError) {
-				console.warn("[CollectionWorkflow] failed to record coordinator failure", {
+				// Log but don't throw - we still want to record the run failure
+				console.warn("[CollectionWorkflow] Coordinator failure recording failed, continuing", {
 					runId,
 					sourceId: payload.sourceId,
-					error:
-						coordinatorError instanceof Error
-							? coordinatorError.message
-							: String(coordinatorError),
+					error: coordinatorError instanceof Error ? coordinatorError.message : String(coordinatorError),
+				});
+			}
+
+			// Always try to update run status, even if coordinator update failed
+			try {
+				await setRunStatus(this.env.CONTROL_DB, runId, "failed", {
+					errorMessage,
+					workflowInstanceId: event.instanceId,
+				});
+			} catch (dbError) {
+				console.error("[CollectionWorkflow] Failed to update run status", {
+					runId,
+					error: dbError instanceof Error ? dbError.message : String(dbError),
 				});
 			}
 
@@ -134,6 +149,7 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 				index: runId,
 			});
 
+			// Re-throw original error to trigger workflow retry
 			throw error;
 		}
 	}

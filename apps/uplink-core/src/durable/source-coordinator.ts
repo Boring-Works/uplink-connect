@@ -2,11 +2,21 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env, RuntimeSnapshot } from "../types";
 import { writeCoordinatorMetrics } from "../lib/metrics";
 
+/**
+ * Enhanced SourceCoordinator with backpressure and capacity management
+ * 
+ * For daily production use, this prevents:
+ * - Runaway sources consuming all resources
+ * - Cascading failures from overloaded systems
+ * - Silent degradation without visibility
+ */
+
 type LeaseAcquirePayload = {
 	requestedBy: string;
 	ttlSeconds: number;
 	force?: boolean;
 	sourceId?: string;
+	estimatedRecords?: number;
 };
 
 type LeaseReleasePayload = {
@@ -23,6 +33,7 @@ type SuccessPayload = {
 	leaseToken: string;
 	runId: string;
 	cursor?: string;
+	recordCount?: number;
 };
 
 type FailurePayload = {
@@ -31,10 +42,31 @@ type FailurePayload = {
 	errorMessage: string;
 };
 
+// Backpressure configuration
+const BACKPRESSURE_CONFIG = {
+	maxConsecutiveFailures: 5, // Auto-pause source after this many failures
+	failureCooldownMs: 60000, // Wait 1 minute after failures before allowing new lease
+	maxRecordsPerRun: 10000, // Hard limit on records per run
+	rateLimitWindowMs: 60000, // 1 minute window for rate limiting
+	minIntervalBetweenRunsMs: 5000, // Minimum 5 seconds between runs
+};
+
 const SNAPSHOT_KEY = "snapshot";
+const BACKPRESSURE_KEY = "backpressure";
+
+interface BackpressureState {
+	consecutiveFailures: number;
+	lastFailureAt: number;
+	totalRunsInWindow: number;
+	windowStartAt: number;
+	lastRunAt: number;
+	pausedUntil?: number;
+	pauseReason?: string;
+}
 
 export class SourceCoordinator extends DurableObject<Env> {
 	private snapshot: RuntimeSnapshot;
+	private backpressure: BackpressureState;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -44,10 +76,23 @@ export class SourceCoordinator extends DurableObject<Env> {
 			updatedAt: Date.now(),
 		};
 
+		this.backpressure = {
+			consecutiveFailures: 0,
+			lastFailureAt: 0,
+			totalRunsInWindow: 0,
+			windowStartAt: Date.now(),
+			lastRunAt: 0,
+		};
+
 		ctx.blockConcurrencyWhile(async () => {
-			const persisted = await this.ctx.storage.get<RuntimeSnapshot>(SNAPSHOT_KEY);
-			if (persisted) {
-				this.snapshot = persisted;
+			const persistedSnapshot = await this.ctx.storage.get<RuntimeSnapshot>(SNAPSHOT_KEY);
+			if (persistedSnapshot) {
+				this.snapshot = persistedSnapshot;
+			}
+			
+			const persistedBackpressure = await this.ctx.storage.get<BackpressureState>(BACKPRESSURE_KEY);
+			if (persistedBackpressure) {
+				this.backpressure = persistedBackpressure;
 			}
 		});
 	}
@@ -56,7 +101,14 @@ export class SourceCoordinator extends DurableObject<Env> {
 		const url = new URL(request.url);
 
 		if (request.method === "GET" && url.pathname === "/state") {
-			return Response.json(this.snapshot);
+			return Response.json({
+				...this.snapshot,
+				backpressure: this.getBackpressureStatus(),
+			});
+		}
+
+		if (request.method === "GET" && url.pathname === "/health") {
+			return Response.json(this.getHealthStatus());
 		}
 
 		if (request.method !== "POST") {
@@ -77,6 +129,8 @@ export class SourceCoordinator extends DurableObject<Env> {
 					return Response.json(await this.handleSuccess(body));
 				case "/state/failure":
 					return Response.json(await this.handleFailure(body));
+				case "/admin/unpause":
+					return Response.json(await this.handleUnpause());
 				default:
 					return new Response("Not Found", { status: 404 });
 			}
@@ -84,7 +138,8 @@ export class SourceCoordinator extends DurableObject<Env> {
 			const message = error instanceof Error ? error.message : "Coordinator operation failed";
 			if (
 				message.includes("Invalid lease token") ||
-				message.includes("Lease expired")
+				message.includes("Lease expired") ||
+				message.includes("Backpressure")
 			) {
 				return new Response(message, { status: 409 });
 			}
@@ -98,18 +153,81 @@ export class SourceCoordinator extends DurableObject<Env> {
 		leaseToken?: string;
 		reason?: string;
 		expiresAt?: number;
+		backpressure?: {
+			isPaused: boolean;
+			pausedUntil?: number;
+			pauseReason?: string;
+			consecutiveFailures: number;
+		};
 	}> {
 		const payload = input as LeaseAcquirePayload;
 		const now = Date.now();
 
+		// Check backpressure - is source paused?
+		if (this.backpressure.pausedUntil && now < this.backpressure.pausedUntil && !payload.force) {
+			return {
+				acquired: false,
+				reason: `Source paused: ${this.backpressure.pauseReason}`,
+				backpressure: {
+					isPaused: true,
+					pausedUntil: this.backpressure.pausedUntil,
+					pauseReason: this.backpressure.pauseReason,
+					consecutiveFailures: this.backpressure.consecutiveFailures,
+				},
+			};
+		}
+
+		// Check rate limiting
+		if (!payload.force) {
+			// Reset window if needed
+			if (now - this.backpressure.windowStartAt > BACKPRESSURE_CONFIG.rateLimitWindowMs) {
+				this.backpressure.totalRunsInWindow = 0;
+				this.backpressure.windowStartAt = now;
+			}
+
+			// Check minimum interval
+			if (now - this.backpressure.lastRunAt < BACKPRESSURE_CONFIG.minIntervalBetweenRunsMs) {
+				return {
+					acquired: false,
+					reason: `Rate limited: minimum interval between runs is ${BACKPRESSURE_CONFIG.minIntervalBetweenRunsMs}ms`,
+					backpressure: this.getBackpressureStatus(),
+				};
+			}
+
+			// Check record limit estimate
+			if (payload.estimatedRecords && payload.estimatedRecords > BACKPRESSURE_CONFIG.maxRecordsPerRun) {
+				return {
+					acquired: false,
+					reason: `Too many records: ${payload.estimatedRecords} > ${BACKPRESSURE_CONFIG.maxRecordsPerRun} limit`,
+					backpressure: this.getBackpressureStatus(),
+				};
+			}
+		}
+
+		// Check existing lease
 		if (this.snapshot.leaseToken && this.snapshot.leaseExpiresAt && this.snapshot.leaseExpiresAt > now && !payload.force) {
 			return {
 				acquired: false,
 				reason: "Lease already active",
 				expiresAt: this.snapshot.leaseExpiresAt,
+				backpressure: this.getBackpressureStatus(),
 			};
 		}
 
+		// Check failure cooldown
+		if (!payload.force && this.backpressure.consecutiveFailures > 0) {
+			const timeSinceLastFailure = now - this.backpressure.lastFailureAt;
+			if (timeSinceLastFailure < BACKPRESSURE_CONFIG.failureCooldownMs) {
+				const remainingCooldown = BACKPRESSURE_CONFIG.failureCooldownMs - timeSinceLastFailure;
+				return {
+					acquired: false,
+					reason: `Cooldown after ${this.backpressure.consecutiveFailures} consecutive failures. Retry in ${Math.ceil(remainingCooldown / 1000)}s`,
+					backpressure: this.getBackpressureStatus(),
+				};
+			}
+		}
+
+		// Grant lease
 		const ttl = Math.max(1, Math.min(payload.ttlSeconds || 300, 3600));
 		const leaseToken = crypto.randomUUID();
 		const sourceId = payload.sourceId ?? this.snapshot.sourceId;
@@ -123,6 +241,11 @@ export class SourceCoordinator extends DurableObject<Env> {
 			updatedAt: now,
 		};
 
+		this.backpressure.lastRunAt = now;
+		this.backpressure.totalRunsInWindow++;
+		this.backpressure.pausedUntil = undefined;
+		this.backpressure.pauseReason = undefined;
+
 		await this.persist();
 
 		writeCoordinatorMetrics(this.env, {
@@ -134,6 +257,7 @@ export class SourceCoordinator extends DurableObject<Env> {
 			acquired: true,
 			leaseToken,
 			expiresAt: this.snapshot.leaseExpiresAt,
+			backpressure: this.getBackpressureStatus(),
 		};
 	}
 
@@ -196,6 +320,11 @@ export class SourceCoordinator extends DurableObject<Env> {
 			updatedAt: Date.now(),
 		};
 
+		// Reset backpressure on success
+		this.backpressure.consecutiveFailures = 0;
+		this.backpressure.pausedUntil = undefined;
+		this.backpressure.pauseReason = undefined;
+
 		await this.persist();
 
 		writeCoordinatorMetrics(this.env, {
@@ -213,6 +342,7 @@ export class SourceCoordinator extends DurableObject<Env> {
 		}
 
 		const consecutiveFailures = (this.snapshot.consecutiveFailures ?? 0) + 1;
+		const now = Date.now();
 
 		this.snapshot = {
 			...this.snapshot,
@@ -223,8 +353,23 @@ export class SourceCoordinator extends DurableObject<Env> {
 			leaseOwner: undefined,
 			leaseToken: undefined,
 			leaseExpiresAt: undefined,
-			updatedAt: Date.now(),
+			updatedAt: now,
 		};
+
+		// Update backpressure
+		this.backpressure.consecutiveFailures++;
+		this.backpressure.lastFailureAt = now;
+
+		// Auto-pause if too many consecutive failures
+		if (this.backpressure.consecutiveFailures >= BACKPRESSURE_CONFIG.maxConsecutiveFailures) {
+			this.backpressure.pausedUntil = now + BACKPRESSURE_CONFIG.failureCooldownMs * 2;
+			this.backpressure.pauseReason = `Auto-paused after ${this.backpressure.consecutiveFailures} consecutive failures`;
+			
+			console.warn(`[SourceCoordinator:${this.snapshot.sourceId}] Auto-paused source due to failures`, {
+				consecutiveFailures: this.backpressure.consecutiveFailures,
+				pausedUntil: this.backpressure.pausedUntil,
+			});
+		}
 
 		await this.persist();
 
@@ -237,6 +382,22 @@ export class SourceCoordinator extends DurableObject<Env> {
 		return this.snapshot;
 	}
 
+	private async handleUnpause(): Promise<{ unpaused: boolean; reason?: string }> {
+		if (!this.backpressure.pausedUntil) {
+			return { unpaused: false, reason: "Source was not paused" };
+		}
+
+		this.backpressure.pausedUntil = undefined;
+		this.backpressure.pauseReason = undefined;
+		this.backpressure.consecutiveFailures = 0;
+		
+		await this.persistBackpressure();
+
+		console.log(`[SourceCoordinator:${this.snapshot.sourceId}] Manually unpaused`);
+
+		return { unpaused: true };
+	}
+
 	private ensureActiveLease(leaseToken: string): void {
 		if (!leaseToken || leaseToken !== this.snapshot.leaseToken) {
 			throw new Error("Invalid lease token");
@@ -246,7 +407,47 @@ export class SourceCoordinator extends DurableObject<Env> {
 		}
 	}
 
+	private getBackpressureStatus() {
+		return {
+			isPaused: this.backpressure.pausedUntil ? Date.now() < this.backpressure.pausedUntil : false,
+			pausedUntil: this.backpressure.pausedUntil,
+			pauseReason: this.backpressure.pauseReason,
+			consecutiveFailures: this.backpressure.consecutiveFailures,
+			runsInWindow: this.backpressure.totalRunsInWindow,
+			lastRunAt: this.backpressure.lastRunAt,
+		};
+	}
+
+	private getHealthStatus() {
+		const now = Date.now();
+		const isPaused = this.backpressure.pausedUntil ? now < this.backpressure.pausedUntil : false;
+		
+		return {
+			sourceId: this.snapshot.sourceId,
+			status: isPaused ? "paused" : this.snapshot.leaseToken ? "active" : "idle",
+			healthy: !isPaused && this.backpressure.consecutiveFailures < 3,
+			backpressure: this.getBackpressureStatus(),
+			lease: this.snapshot.leaseToken ? {
+				owner: this.snapshot.leaseOwner,
+				expiresAt: this.snapshot.leaseExpiresAt,
+			} : null,
+			lastSuccess: this.snapshot.lastSuccessAt,
+			lastError: this.snapshot.lastErrorAt,
+			cursor: this.snapshot.cursor,
+		};
+	}
+
 	private async persist(): Promise<void> {
-		await this.ctx.storage.put(SNAPSHOT_KEY, this.snapshot);
+		await Promise.all([
+			this.ctx.storage.put(SNAPSHOT_KEY, this.snapshot),
+			this.persistBackpressure(),
+		]);
+	}
+
+	private async persistBackpressure(): Promise<void> {
+		await this.ctx.storage.put(BACKPRESSURE_KEY, this.backpressure);
 	}
 }
+
+// Export backpressure config for external use
+export { BACKPRESSURE_CONFIG };

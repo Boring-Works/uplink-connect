@@ -11,6 +11,10 @@ export function getCoordinatorStub(env: Env, sourceId: string): DurableObjectStu
 	return env.SOURCE_COORDINATOR.getByName(sourceId);
 }
 
+export function getBrowserManagerStub(env: Env): DurableObjectStub {
+	return env.BROWSER_MANAGER.getByName("global");
+}
+
 export async function acquireLease(
 	stub: DurableObjectStub,
 	params: { requestedBy: string; ttlSeconds: number; force?: boolean; sourceId?: string },

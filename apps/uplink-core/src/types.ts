@@ -1,5 +1,6 @@
 import type { SourceConfig, SourcePolicy } from "@uplink/contracts";
 import type { SourceCoordinator } from "./durable/source-coordinator";
+import type { BrowserManagerDO } from "./durable/browser-manager";
 
 // Pipeline is in beta - using generic interface until types are available
 interface Pipeline {
@@ -16,6 +17,7 @@ export type Env = {
 	INGEST_QUEUE: Queue;
 	UPLINK_BROWSER: Fetcher;
 	SOURCE_COORDINATOR: DurableObjectNamespace<SourceCoordinator>;
+	BROWSER_MANAGER: DurableObjectNamespace<BrowserManagerDO>;
 	COLLECTION_WORKFLOW: Workflow;
 	RETENTION_WORKFLOW: Workflow;
 	CORE_INTERNAL_KEY?: string;

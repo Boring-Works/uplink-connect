@@ -4,7 +4,7 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-04-12",
 	"compatibility_flags": ["nodejs_compat"],
-	"workers_dev": false,
+	"workers_dev": true,
 	"observability": {
 		"enabled": true,
 		"logs": {
@@ -19,7 +19,7 @@
 		{
 			"binding": "CONTROL_DB",
 			"database_name": "uplink-control",
-			"database_id": "<CONTROL_DB_ID>",
+			"database_id": "0045bbb8-2d6b-4c9e-a39f-204a4da25ec1",
 			"migrations_dir": "migrations"
 		}
 	],
@@ -29,7 +29,7 @@
 			"bucket_name": "uplink-raw"
 		}
 	],
-	"vectorize_indexes": [
+	"vectorize": [
 		{
 			"binding": "ENTITY_INDEX",
 			"index_name": "uplink-entities"
@@ -52,13 +52,17 @@
 			{
 				"name": "SOURCE_COORDINATOR",
 				"class_name": "SourceCoordinator"
+			},
+			{
+				"name": "BROWSER_MANAGER",
+				"class_name": "BrowserManagerDO"
 			}
 		]
 	},
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["SourceCoordinator"]
+			"new_sqlite_classes": ["SourceCoordinator", "BrowserManagerDO"]
 		}
 	],
 	"workflows": [

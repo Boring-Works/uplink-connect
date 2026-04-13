@@ -26,10 +26,15 @@ import {
 	D1_RETRY_POLICY,
 	R2_RETRY_POLICY,
 	VECTORIZE_RETRY_POLICY,
+	CircuitBreakerOpenError,
 } from "./retry";
+import { Logger } from "./logging";
 
 // Circuit breakers for external services (module-level singleton)
 const circuitBreakers = new Map<string, import("./retry").CircuitBreaker>();
+
+// Logger for structured logging
+const logger = new Logger("processing");
 
 async function getCircuitBreaker(name: string): Promise<import("./retry").CircuitBreaker> {
 	const { CircuitBreaker } = await import("./retry");
@@ -232,10 +237,19 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 				);
 			} catch (vectorError) {
 				// Vectorize failures are non-critical - log but don't fail the ingest
-				console.warn(`[handleIngestMessage] Vectorize indexing failed (non-critical)`, {
-					runId,
-					error: vectorError instanceof Error ? vectorError.message : String(vectorError),
-				});
+				if (vectorError instanceof CircuitBreakerOpenError) {
+					logger.warn("Vectorize circuit breaker open, skipping indexing", {
+						runId,
+						sourceId: envelope.sourceId,
+						remainingMs: vectorError.remainingMs,
+					});
+				} else {
+					logger.warn("Vectorize indexing failed (non-critical)", {
+						runId,
+						sourceId: envelope.sourceId,
+						error: vectorError instanceof Error ? vectorError.message : String(vectorError),
+					});
+				}
 			}
 		}
 
@@ -264,7 +278,7 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 
 		// Check if this is a duplicate error - if so, treat as success
 		if (isDuplicateError(error)) {
-			console.log(`[handleIngestMessage] Duplicate detected, treating as success`, { runId });
+			logger.info("Duplicate detected, treating as success", { runId, sourceId: envelope.sourceId });
 			await setRunStatus(env.CONTROL_DB, runId, "normalized", {
 				normalizedCount: envelope.records.length,
 				endedAt,
@@ -302,11 +316,13 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 			processingTimeMs,
 		});
 
-		console.error(`[handleIngestMessage] Processing failed`, {
-			errorId,
+		logger.error("Processing failed", {
 			runId,
+			sourceId: envelope.sourceId,
+			requestId,
 			category: classification.errorCategory,
 			isTransient: classification.isTransient,
+			errorId,
 		});
 
 		throw error;

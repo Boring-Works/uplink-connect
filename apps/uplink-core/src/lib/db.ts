@@ -235,6 +235,7 @@ export async function setRunStatus(
 		artifactKey?: string;
 		workflowInstanceId?: string;
 		endedAt?: string;
+		errorMessage?: string;
 	},
 ): Promise<void> {
 	await db.prepare(
@@ -258,6 +259,15 @@ export async function setRunStatus(
 			runId,
 		)
 		.run();
+
+	// Also update error message if provided
+	if (extra?.errorMessage) {
+		await db.prepare(
+			`UPDATE ingest_runs SET error_message = ? WHERE run_id = ?`
+		)
+			.bind(extra.errorMessage, runId)
+			.run();
+	}
 }
 
 export async function insertRunIfMissing(

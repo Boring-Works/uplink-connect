@@ -15,6 +15,7 @@ import {
 	acquireLease,
 	getCoordinatorState,
 	getCoordinatorStub,
+	getBrowserManagerStub,
 } from "./lib/coordinator-client";
 import {
 	getArtifact,
@@ -30,6 +31,7 @@ import { processQueueBatch, retryFailedOperation } from "./lib/processing";
 import { querySimilarEntities } from "./lib/vectorize";
 import type { VectorizeVectorMetadataFilter } from "./lib/vectorize";
 import { SourceCoordinator } from "./durable/source-coordinator";
+import { BrowserManagerDO } from "./durable/browser-manager";
 import { CollectionWorkflow } from "./workflows/collection-workflow";
 import { RetentionWorkflow } from "./workflows/retention-workflow";
 import {
@@ -493,6 +495,73 @@ app.post("/internal/errors/:errorId/retry", async (c) => {
 	return c.json(result, statusCode);
 });
 
+// Production monitoring dashboard endpoint
+app.get("/internal/dashboard", async (c) => {
+	const [
+		systemMetrics,
+		queueMetrics,
+		entityMetrics,
+		sources,
+		alerts,
+	] = await Promise.all([
+		getSystemMetrics(c.env.CONTROL_DB),
+		getQueueMetrics(c.env.CONTROL_DB),
+		getEntityMetrics(c.env.CONTROL_DB),
+		c.env.CONTROL_DB.prepare("SELECT source_id, name, type, status FROM source_configs LIMIT 100").all(),
+		listActiveAlerts(c.env.CONTROL_DB, { limit: 10 }),
+	]);
+
+	// Get recent runs summary
+	const recentRuns = await c.env.CONTROL_DB
+		.prepare(`
+			SELECT status, COUNT(*) as count
+			FROM ingest_runs
+			WHERE created_at > unixepoch() - 86400
+			GROUP BY status
+		`)
+		.all();
+
+	const runSummary: Record<string, number> = {};
+	for (const row of recentRuns.results ?? []) {
+		const status = (row as { status: string; count: number }).status;
+		const count = (row as { status: string; count: number }).count;
+		runSummary[status] = count;
+	}
+
+	return c.json({
+		timestamp: toIsoNow(),
+		summary: {
+			sources: {
+				total: sources.results?.length ?? 0,
+				active: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "active").length,
+				paused: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "paused").length,
+			},
+			runs24h: runSummary,
+			alerts: {
+				active: alerts.length,
+				critical: alerts.filter(a => a.severity === "critical").length,
+			},
+		},
+		system: systemMetrics,
+		queue: queueMetrics,
+		entities: entityMetrics,
+		activeAlerts: alerts.slice(0, 5),
+	});
+});
+
+// Browser manager status endpoint
+app.get("/internal/browser/status", async (c) => {
+	const managerStub = getBrowserManagerStub(c.env);
+	const response = await managerStub.fetch("https://browser-manager/status");
+	
+	if (!response.ok) {
+		return c.json({ error: "Failed to get browser manager status" }, 502);
+	}
+	
+	const status = await response.json();
+	return c.json(status);
+});
+
 export default {
 	async fetch(request: Request, env: Env, executionCtx: ExecutionContext): Promise<Response> {
 		return app.fetch(request, env, executionCtx);
@@ -503,4 +572,4 @@ export default {
 	},
 };
 
-export { SourceCoordinator, CollectionWorkflow, RetentionWorkflow };
+export { SourceCoordinator, BrowserManagerDO, CollectionWorkflow, RetentionWorkflow };
