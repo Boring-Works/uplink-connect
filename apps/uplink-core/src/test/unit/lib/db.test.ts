@@ -97,44 +97,55 @@ describe("getArtifact", () => {
 });
 
 describe("listRuns", () => {
-	it("returns runs with capped limit", async () => {
+	it("returns paginated runs", async () => {
+		const mockFirst = vi.fn().mockResolvedValue({ total: 2 });
+		const mockAll = vi.fn().mockResolvedValue({
+			results: [{ run_id: "run-1" }, { run_id: "run-2" }],
+		});
 		const mockDb = {
 			prepare: vi.fn().mockReturnValue({
+				first: mockFirst,
 				bind: vi.fn().mockReturnValue({
-					all: vi.fn().mockResolvedValue({
-						results: [{ run_id: "run-1" }, { run_id: "run-2" }],
-					}),
+					first: mockFirst,
+					all: mockAll,
 				}),
 			}),
 		} as unknown as D1Database;
 
-		const result = await listRuns(mockDb, 1000);
-		expect(result).toHaveLength(2);
+		const result = await listRuns(mockDb, { limit: 1000 });
+		expect(result.items).toHaveLength(2);
+		expect(result.total).toBe(2);
+		expect(result.hasMore).toBe(false);
 	});
 
 	it("caps limit at 500", async () => {
 		const mockAll = vi.fn().mockResolvedValue({ results: [] });
-		const mockBind = vi.fn().mockReturnValue({ all: mockAll });
+		const mockFirst = vi.fn().mockResolvedValue({ total: 0 });
+		const mockBind = vi.fn().mockReturnValue({ all: mockAll, first: mockFirst });
 		const mockDb = {
 			prepare: vi.fn().mockReturnValue({
+				first: mockFirst,
 				bind: mockBind,
 			}),
 		} as unknown as D1Database;
 
-		await listRuns(mockDb, 1000);
+		await listRuns(mockDb, { limit: 1000 });
+		// Second bind call is for data query (first is count)
 		expect(mockBind.mock.calls[0][0]).toBe(500);
 	});
 
 	it("ensures minimum limit of 1", async () => {
 		const mockAll = vi.fn().mockResolvedValue({ results: [] });
-		const mockBind = vi.fn().mockReturnValue({ all: mockAll });
+		const mockFirst = vi.fn().mockResolvedValue({ total: 0 });
+		const mockBind = vi.fn().mockReturnValue({ all: mockAll, first: mockFirst });
 		const mockDb = {
 			prepare: vi.fn().mockReturnValue({
+				first: mockFirst,
 				bind: mockBind,
 			}),
 		} as unknown as D1Database;
 
-		await listRuns(mockDb, 0);
+		await listRuns(mockDb, { limit: 0 });
 		expect(mockBind.mock.calls[0][0]).toBe(1);
 	});
 });

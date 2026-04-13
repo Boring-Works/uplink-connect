@@ -37,6 +37,12 @@ export const SourcePolicySchema = z.object({
 	alertConfiguration: AlertConfigurationSchema.optional(),
 });
 
+export const WebhookSecuritySchema = z.object({
+	secret: z.string().min(1).optional(),
+	signatureHeader: z.string().min(1).optional(),
+	signatureAlgorithm: z.enum(["hmac-sha256", "hmac-sha512"]).default("hmac-sha256"),
+}).optional();
+
 export const SourceConfigSchema = z.object({
 	sourceId: z.string().min(1),
 	name: z.string().min(1),
@@ -49,6 +55,7 @@ export const SourceConfigSchema = z.object({
 	requestBody: z.string().optional(),
 	metadata: z.record(z.string(), z.unknown()).default({}),
 	policy: SourcePolicySchema,
+	webhookSecurity: WebhookSecuritySchema,
 });
 
 export const SourceTriggerRequestSchema = z.object({
@@ -134,6 +141,7 @@ export type AlertSeverity = z.infer<typeof AlertSeveritySchema>;
 export type AlertRule = z.infer<typeof AlertRuleSchema>;
 export type AlertConfiguration = z.infer<typeof AlertConfigurationSchema>;
 export type SourcePolicy = z.infer<typeof SourcePolicySchema>;
+export type WebhookSecurity = z.infer<typeof WebhookSecuritySchema>;
 export type SourceConfig = z.infer<typeof SourceConfigSchema>;
 export type SourceTriggerRequest = z.infer<typeof SourceTriggerRequestSchema>;
 export type CollectionWorkflowParams = z.infer<typeof CollectionWorkflowParamsSchema>;
@@ -163,6 +171,64 @@ export function createIngestQueueMessage(
 export function buildRawArtifactKey(envelope: IngestEnvelope): string {
 	const day = envelope.collectedAt.slice(0, 10);
 	return `raw/${envelope.sourceId}/${day}/${envelope.ingestId}.json`;
+}
+
+/**
+ * Verify webhook HMAC signature
+ * Supports HMAC-SHA256 and HMAC-SHA512
+ */
+export async function verifyWebhookSignature(
+	payload: string,
+	signature: string,
+	secret: string,
+	algorithm: "hmac-sha256" | "hmac-sha512" = "hmac-sha256",
+): Promise<boolean> {
+	const algo = algorithm === "hmac-sha512" ? "SHA-512" : "SHA-256";
+	const encoder = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		"raw",
+		encoder.encode(secret),
+		{ name: "HMAC", hash: algo },
+		false,
+		["sign"],
+	);
+	const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+	const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+
+	// Constant-time comparison to prevent timing attacks
+	if (signature.length !== expectedSignature.length) {
+		return false;
+	}
+	let result = 0;
+	for (let i = 0; i < signature.length; i++) {
+		result |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+	}
+	return result === 0;
+}
+
+/**
+ * Generate webhook signature for testing/outbound webhooks
+ */
+export async function generateWebhookSignature(
+	payload: string,
+	secret: string,
+	algorithm: "hmac-sha256" | "hmac-sha512" = "hmac-sha256",
+): Promise<string> {
+	const algo = algorithm === "hmac-sha512" ? "SHA-512" : "SHA-256";
+	const encoder = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		"raw",
+		encoder.encode(secret),
+		{ name: "HMAC", hash: algo },
+		false,
+		["sign"],
+	);
+	const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+	return Array.from(new Uint8Array(signatureBuffer))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
 }
 
 // Analytics event schemas for Pipelines sink

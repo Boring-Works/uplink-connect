@@ -22,6 +22,7 @@ export type Env = {
 	RETENTION_WORKFLOW: Workflow;
 	CORE_INTERNAL_KEY?: string;
 	BROWSER_API_KEY?: string;
+	SLACK_WEBHOOK_URL?: string;
 };
 
 export type SourceConfigRecord = SourceConfig;

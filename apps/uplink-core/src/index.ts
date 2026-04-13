@@ -26,7 +26,12 @@ import {
 	listIngestErrors,
 	upsertRuntimeSnapshot,
 	upsertSourceConfig,
+	softDeleteSource,
+	restoreSource,
+	permanentlyDeleteSource,
+	listSources,
 } from "./lib/db";
+import { sendNotification, testNotificationChannel } from "./lib/notifications";
 import { processQueueBatch, retryFailedOperation } from "./lib/processing";
 import { querySimilarEntities } from "./lib/vectorize";
 import type { VectorizeVectorMetadataFilter } from "./lib/vectorize";
@@ -73,9 +78,14 @@ app.use("/internal/*", async (c, next) => {
 
 app.get("/internal/runs", async (c) => {
 	const limitRaw = c.req.query("limit") ?? "50";
+	const offsetRaw = c.req.query("offset") ?? "0";
 	const limit = Number.parseInt(limitRaw, 10);
-	const runs = await listRuns(c.env.CONTROL_DB, Number.isFinite(limit) ? limit : 50);
-	return c.json({ runs, total: runs.length });
+	const offset = Number.parseInt(offsetRaw, 10);
+	const result = await listRuns(c.env.CONTROL_DB, {
+		limit: Number.isFinite(limit) ? limit : 50,
+		offset: Number.isFinite(offset) ? offset : 0,
+	});
+	return c.json(result);
 });
 
 app.get("/internal/runs/:runId", async (c) => {
@@ -167,13 +177,47 @@ app.get("/internal/artifacts/:artifactId", async (c) => {
 });
 
 app.get("/internal/sources", async (c) => {
-	const result = await c.env.CONTROL_DB.prepare(
-		`SELECT source_id, name, type, status, adapter_type, endpoint_url, updated_at
-		FROM source_configs
-		ORDER BY updated_at DESC`,
-	).all<Record<string, unknown>>();
+	const limitRaw = c.req.query("limit") ?? "50";
+	const offsetRaw = c.req.query("offset") ?? "0";
+	const includeDeleted = c.req.query("includeDeleted") === "true";
+	const limit = Number.parseInt(limitRaw, 10);
+	const offset = Number.parseInt(offsetRaw, 10);
 
-	return c.json({ sources: result.results, total: result.results.length });
+	const result = await listSources(c.env.CONTROL_DB, {
+		limit: Number.isFinite(limit) ? limit : 50,
+		offset: Number.isFinite(offset) ? offset : 0,
+		includeDeleted,
+	});
+
+	return c.json(result);
+});
+
+app.delete("/internal/sources/:sourceId", async (c) => {
+	const sourceId = c.req.param("sourceId");
+	const permanent = c.req.query("permanent") === "true";
+
+	if (permanent) {
+		const deleted = await permanentlyDeleteSource(c.env.CONTROL_DB, sourceId);
+		if (!deleted) {
+			return c.json({ error: "Source not found or already deleted" }, 404);
+		}
+		return c.json({ ok: true, message: "Source permanently deleted" });
+	}
+
+	const deleted = await softDeleteSource(c.env.CONTROL_DB, sourceId);
+	if (!deleted) {
+		return c.json({ error: "Source not found or already deleted" }, 404);
+	}
+	return c.json({ ok: true, message: "Source soft-deleted" });
+});
+
+app.post("/internal/sources/:sourceId/restore", async (c) => {
+	const sourceId = c.req.param("sourceId");
+	const restored = await restoreSource(c.env.CONTROL_DB, sourceId);
+	if (!restored) {
+		return c.json({ error: "Source not found or not deleted" }, 404);
+	}
+	return c.json({ ok: true, message: "Source restored" });
 });
 
 app.post("/internal/sources", async (c) => {
@@ -560,6 +604,14 @@ app.get("/internal/browser/status", async (c) => {
 	
 	const status = await response.json();
 	return c.json(status);
+});
+
+// Notification test endpoints
+app.post("/internal/notifications/test/:channel", async (c) => {
+	const channel = c.req.param("channel") as "webhook" | "slack";
+	const body = await c.req.json().catch(() => ({}));
+	const result = await testNotificationChannel(c.env, channel, body.url);
+	return c.json(result, result.success ? 200 : 400);
 });
 
 export default {

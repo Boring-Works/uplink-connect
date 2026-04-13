@@ -19,8 +19,9 @@ export async function upsertSourceConfig(db: D1Database, source: SourceConfig): 
 	await db.prepare(
 		`INSERT INTO source_configs (
 			source_id, name, type, status, adapter_type, endpoint_url,
-			request_method, request_headers_json, request_body, metadata_json, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+			request_method, request_headers_json, request_body, metadata_json,
+			webhook_security_json, deleted_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
 		ON CONFLICT(source_id) DO UPDATE SET
 			name = excluded.name,
 			type = excluded.type,
@@ -31,6 +32,7 @@ export async function upsertSourceConfig(db: D1Database, source: SourceConfig): 
 			request_headers_json = excluded.request_headers_json,
 			request_body = excluded.request_body,
 			metadata_json = excluded.metadata_json,
+			webhook_security_json = excluded.webhook_security_json,
 			updated_at = unixepoch()`,
 	)
 		.bind(
@@ -44,6 +46,8 @@ export async function upsertSourceConfig(db: D1Database, source: SourceConfig): 
 			JSON.stringify(parsed.requestHeaders),
 			parsed.requestBody ?? null,
 			JSON.stringify(parsed.metadata),
+			parsed.webhookSecurity ? JSON.stringify(parsed.webhookSecurity) : null,
+			null,
 		)
 		.run();
 
@@ -179,8 +183,30 @@ export async function getSourceConfigWithPolicy(
 	return { config, policy };
 }
 
-export async function listRuns(db: D1Database, limit: number): Promise<Record<string, unknown>[]> {
-	const capped = Math.max(1, Math.min(limit, 500));
+export interface PaginationParams {
+	limit?: number;
+	offset?: number;
+	cursor?: string;
+}
+
+export interface PaginatedResult<T> {
+	items: T[];
+	total: number;
+	nextCursor?: string;
+	hasMore: boolean;
+}
+
+export async function listRuns(
+	db: D1Database,
+	params: PaginationParams = {},
+): Promise<PaginatedResult<Record<string, unknown>>> {
+	const limit = Math.max(1, Math.min(params.limit ?? 50, 500));
+	const offset = Math.max(0, params.offset ?? 0);
+
+	const countResult = await db
+		.prepare("SELECT COUNT(*) as total FROM ingest_runs")
+		.first<{ total: number }>();
+
 	const result = await db
 		.prepare(
 			`SELECT run_id, source_id, source_name, source_type, status, record_count,
@@ -188,12 +214,21 @@ export async function listRuns(db: D1Database, limit: number): Promise<Record<st
 			replay_of_run_id, collected_at, received_at, ended_at, updated_at
 			FROM ingest_runs
 			ORDER BY created_at DESC
-			LIMIT ?`,
+			LIMIT ? OFFSET ?`,
 		)
-		.bind(capped)
+		.bind(limit, offset)
 		.all<Record<string, unknown>>();
 
-	return result.results;
+	const total = countResult?.total ?? 0;
+	const hasMore = offset + result.results.length < total;
+	const nextCursor = hasMore ? String(offset + result.results.length) : undefined;
+
+	return {
+		items: result.results,
+		total,
+		nextCursor,
+		hasMore,
+	};
 }
 
 export async function getRun(db: D1Database, runId: string): Promise<Record<string, unknown> | null> {
@@ -223,6 +258,78 @@ export async function getArtifact(db: D1Database, artifactId: string): Promise<R
 		.first<Record<string, unknown>>();
 
 	return row ?? null;
+}
+
+export async function softDeleteSource(db: D1Database, sourceId: string): Promise<boolean> {
+	const result = await db
+		.prepare(
+			`UPDATE source_configs
+			SET deleted_at = unixepoch(), status = 'deleted', updated_at = unixepoch()
+			WHERE source_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(sourceId)
+		.run();
+
+	return result.success && (result.meta?.changes ?? 0) > 0;
+}
+
+export async function restoreSource(db: D1Database, sourceId: string): Promise<boolean> {
+	const result = await db
+		.prepare(
+			`UPDATE source_configs
+			SET deleted_at = NULL, status = 'active', updated_at = unixepoch()
+			WHERE source_id = ? AND deleted_at IS NOT NULL`,
+		)
+		.bind(sourceId)
+		.run();
+
+	return result.success && (result.meta?.changes ?? 0) > 0;
+}
+
+export async function permanentlyDeleteSource(db: D1Database, sourceId: string): Promise<boolean> {
+	// Delete in dependency order
+	await db.prepare("DELETE FROM source_capabilities WHERE source_id = ?").bind(sourceId).run();
+	await db.prepare("DELETE FROM source_policies WHERE source_id = ?").bind(sourceId).run();
+	await db.prepare("DELETE FROM source_runtime_snapshots WHERE source_id = ?").bind(sourceId).run();
+	const result = await db.prepare("DELETE FROM source_configs WHERE source_id = ?").bind(sourceId).run();
+
+	return result.success && (result.meta?.changes ?? 0) > 0;
+}
+
+export async function listSources(
+	db: D1Database,
+	params: PaginationParams & { includeDeleted?: boolean } = {},
+): Promise<PaginatedResult<Record<string, unknown>>> {
+	const limit = Math.max(1, Math.min(params.limit ?? 50, 500));
+	const offset = Math.max(0, params.offset ?? 0);
+	const whereClause = params.includeDeleted ? "" : "WHERE deleted_at IS NULL";
+
+	const countResult = await db
+		.prepare(`SELECT COUNT(*) as total FROM source_configs ${whereClause}`)
+		.first<{ total: number }>();
+
+	const result = await db
+		.prepare(
+			`SELECT source_id, name, type, status, adapter_type, endpoint_url,
+			deleted_at, updated_at
+			FROM source_configs
+			${whereClause}
+			ORDER BY updated_at DESC
+			LIMIT ? OFFSET ?`,
+		)
+		.bind(limit, offset)
+		.all<Record<string, unknown>>();
+
+	const total = countResult?.total ?? 0;
+	const hasMore = offset + result.results.length < total;
+	const nextCursor = hasMore ? String(offset + result.results.length) : undefined;
+
+	return {
+		items: result.results,
+		total,
+		nextCursor,
+		hasMore,
+	};
 }
 
 export async function setRunStatus(
