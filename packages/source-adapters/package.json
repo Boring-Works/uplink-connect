@@ -10,10 +10,14 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"build": "tsc --noEmit"
+		"build": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@uplink/contracts": "workspace:*",
 		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"vitest": "^3.0.9"
 	}
 }

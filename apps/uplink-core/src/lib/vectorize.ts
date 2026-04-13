@@ -25,6 +25,9 @@ export async function generateEmbedding(
 	env: { AI: Ai },
 	text: string,
 ): Promise<number[]> {
+	if (!env.AI) {
+		throw new Error("AI binding not available");
+	}
 	const response = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
 		text: [text],
 	});
@@ -132,6 +135,9 @@ export async function upsertEntityVector(
 	env: { AI: Ai; ENTITY_INDEX: VectorizeIndex },
 	entity: NormalizedEntity,
 ): Promise<void> {
+	if (!env.ENTITY_INDEX) {
+		return;
+	}
 	const text = extractSearchableText(entity.canonicalJson);
 
 	if (!text.trim()) {
@@ -206,6 +212,9 @@ export async function querySimilarEntities(
 		returnMetadata?: boolean;
 	},
 ): Promise<SearchResult[]> {
+	if (!env.ENTITY_INDEX) {
+		throw new Error("Vectorize index not available");
+	}
 	const embedding = await generateEmbedding(env, query);
 
 	const results = await env.ENTITY_INDEX.query(embedding, {
@@ -242,6 +251,9 @@ export async function deleteEntityVector(
 	env: { ENTITY_INDEX: VectorizeIndex },
 	entityId: string,
 ): Promise<void> {
+	if (!env.ENTITY_INDEX) {
+		return;
+	}
 	await env.ENTITY_INDEX.deleteByIds([entityId]);
 }
 
@@ -252,7 +264,7 @@ export async function deleteEntityVectors(
 	env: { ENTITY_INDEX: VectorizeIndex },
 	entityIds: string[],
 ): Promise<void> {
-	if (entityIds.length === 0) {
+	if (entityIds.length === 0 || !env.ENTITY_INDEX) {
 		return;
 	}
 

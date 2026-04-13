@@ -6,7 +6,7 @@ export function ensureInternalAuth(c: Context<{ Bindings: Env }>): Response | nu
 		return c.json({ error: "CORE_INTERNAL_KEY not configured" }, 500);
 	}
 
-	const header = c.req.header("x-uplink-internal-key");
+	const header = c.req.header("x-uplink-internal-key")?.trim();
 	if (!header || header !== c.env.CORE_INTERNAL_KEY) {
 		return c.json({ error: "Unauthorized" }, 401);
 	}

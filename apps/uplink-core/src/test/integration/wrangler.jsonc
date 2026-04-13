@@ -51,6 +51,10 @@
 			{
 				"name": "SOURCE_COORDINATOR",
 				"class_name": "SourceCoordinator"
+			},
+			{
+				"name": "BROWSER_MANAGER",
+				"class_name": "BrowserManagerDO"
 			}
 		]
 	},
@@ -64,7 +68,7 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["SourceCoordinator"]
+			"new_sqlite_classes": ["SourceCoordinator", "BrowserManagerDO"]
 		}
 	]
 }

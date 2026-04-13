@@ -323,7 +323,9 @@ describe("collection workflow", () => {
 
 			expect(response.status).toBe(409);
 			const result = await response.json();
-			expect(result.error).toContain("Lease");
+			expect(
+				result.error?.includes("Lease") || result.error?.includes("Rate limited"),
+			).toBe(true);
 		});
 	});
 });

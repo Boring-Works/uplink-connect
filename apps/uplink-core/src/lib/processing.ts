@@ -16,6 +16,9 @@ import {
 	setRunStatus,
 	updateErrorRetryState,
 	upsertNormalizedEntities,
+	getIngestError,
+	checkIdempotencyKey,
+	recordIdempotencyKey,
 } from "./db";
 import { writeIngestMetrics, writeEntityMetrics } from "./metrics";
 import { upsertEntityVectors } from "./vectorize";
@@ -423,7 +426,7 @@ async function getPreviousContentHashes(
 export async function retryFailedOperation(
 	env: Env,
 	errorId: string,
-	options: {
+	options?: {
 		force?: boolean;
 		triggeredBy?: string;
 	},
@@ -433,10 +436,9 @@ export async function retryFailedOperation(
 	message: string;
 	retryAttemptId?: string;
 }> {
-	const { force = false, triggeredBy = "manual" } = options;
+	const { force = false, triggeredBy = "manual" } = options ?? {};
 
 	// Get the error record
-	const { getIngestError, checkIdempotencyKey, recordIdempotencyKey } = await import("./db");
 	const error = await getIngestError(env.CONTROL_DB, errorId);
 
 	if (!error) {

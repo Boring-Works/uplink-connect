@@ -45,7 +45,7 @@ export function createSourceAdapter(type: SourceType): SourceAdapter {
 	}
 }
 
-class ApiSourceAdapter implements SourceAdapter {
+export class ApiSourceAdapter implements SourceAdapter {
 	type: SourceType = "api";
 
 	async collect(config: SourceRuntimeConfig, context: AdapterContext): Promise<AdapterResult> {
@@ -79,7 +79,7 @@ class ApiSourceAdapter implements SourceAdapter {
 	}
 }
 
-class BrowserSourceAdapter implements SourceAdapter {
+export class BrowserSourceAdapter implements SourceAdapter {
 	type: SourceType = "browser";
 
 	async collect(config: SourceRuntimeConfig, context: AdapterContext): Promise<AdapterResult> {
@@ -123,7 +123,7 @@ class BrowserSourceAdapter implements SourceAdapter {
 	}
 }
 
-class WebhookSourceAdapter implements SourceAdapter {
+export class WebhookSourceAdapter implements SourceAdapter {
 	type: SourceType = "webhook";
 
 	async collect(): Promise<AdapterResult> {
@@ -131,7 +131,7 @@ class WebhookSourceAdapter implements SourceAdapter {
 	}
 }
 
-class GenericSourceAdapter implements SourceAdapter {
+export class GenericSourceAdapter implements SourceAdapter {
 	type: SourceType;
 
 	constructor(type: SourceType) {

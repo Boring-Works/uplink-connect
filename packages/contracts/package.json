@@ -10,9 +10,13 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"build": "tsc --noEmit"
+		"build": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"vitest": "^3.0.9"
 	}
 }

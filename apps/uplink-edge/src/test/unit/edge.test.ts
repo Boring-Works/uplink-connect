@@ -1,0 +1,227 @@
+import { describe, it, expect, vi } from "vitest";
+import app from "../../index";
+
+describe("uplink-edge unit", () => {
+	const createEnv = () => ({
+		INGEST_API_KEY: "test-api-key",
+		CORE_INTERNAL_KEY: "test-internal-key",
+		INGEST_QUEUE: {
+			send: async () => undefined,
+		} as unknown as Queue,
+		UPLINK_CORE: {
+			fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+		} as unknown as Fetcher,
+	});
+
+	describe("health", () => {
+		it("returns service name", async () => {
+			const env = createEnv();
+			const res = await app.fetch(new Request("http://localhost/health"), env);
+			const body = await res.json();
+			expect(body.service).toBe("uplink-edge");
+		});
+
+		it("returns current timestamp", async () => {
+			const env = createEnv();
+			const res = await app.fetch(new Request("http://localhost/health"), env);
+			const body = await res.json();
+			expect(body.now).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+		});
+	});
+
+	describe("intake validation", () => {
+		it("rejects empty body", async () => {
+			const env = createEnv();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: "",
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("rejects array body", async () => {
+			const env = createEnv();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: "[]",
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("rejects missing records", async () => {
+			const env = createEnv();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({ sourceId: "src-1", sourceName: "Test", sourceType: "api" }),
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("rejects records without contentHash", async () => {
+			const env = createEnv();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({
+						sourceId: "src-1",
+						sourceName: "Test",
+						sourceType: "api",
+						records: [{ rawPayload: {} }],
+					}),
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("rejects records without rawPayload", async () => {
+			const env = createEnv();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({
+						sourceId: "src-1",
+						sourceName: "Test",
+						sourceType: "api",
+						records: [{ contentHash: "abc123" }],
+					}),
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+	});
+
+	describe("intake defaults", () => {
+		it("defaults sourceType to api", async () => {
+			const env = createEnv();
+			const sendSpy = vi.fn().mockResolvedValue(undefined);
+			const queue = { send: sendSpy } as unknown as Queue;
+			env.INGEST_QUEUE = queue;
+
+			const res = await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({
+						sourceId: "src-1",
+						sourceName: "Test",
+						records: [{ contentHash: "abc12345678901234567", rawPayload: {} }],
+					}),
+				}),
+				env,
+			);
+			expect(res.status).toBe(202);
+			expect(sendSpy).toHaveBeenCalledTimes(1);
+			const msg = sendSpy.mock.calls[0][0] as { envelope: { sourceType: string } };
+			expect(msg.envelope.sourceType).toBe("api");
+		});
+
+		it("generates UUID for missing ingestId", async () => {
+			const env = createEnv();
+			const sendSpy = vi.fn().mockResolvedValue(undefined);
+			const queue = { send: sendSpy } as unknown as Queue;
+			env.INGEST_QUEUE = queue;
+
+			await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({
+						sourceId: "src-1",
+						sourceName: "Test",
+						records: [{ contentHash: "abc12345678901234567", rawPayload: {} }],
+					}),
+				}),
+				env,
+			);
+
+			const msg = sendSpy.mock.calls[0][0] as { envelope: { ingestId: string } };
+			expect(msg.envelope.ingestId).toMatch(/^[0-9a-f-]{36}$/);
+		});
+
+		it("defaults hasMore to false", async () => {
+			const env = createEnv();
+			const sendSpy = vi.fn().mockResolvedValue(undefined);
+			const queue = { send: sendSpy } as unknown as Queue;
+			env.INGEST_QUEUE = queue;
+
+			await app.fetch(
+				new Request("http://localhost/v1/intake", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({
+						sourceId: "src-1",
+						sourceName: "Test",
+						records: [{ contentHash: "abc12345678901234567", rawPayload: {} }],
+					}),
+				}),
+				env,
+			);
+
+			const msg = sendSpy.mock.calls[0][0] as { envelope: { hasMore: boolean } };
+			expect(msg.envelope.hasMore).toBe(false);
+		});
+	});
+
+	describe("trigger proxy", () => {
+		it("passes force parameter to core", async () => {
+			const env = createEnv();
+			let capturedBody: string | undefined;
+			const fetcher = {
+				fetch: async (url: string | Request, init?: RequestInit) => {
+					capturedBody = init?.body as string;
+					return new Response(JSON.stringify({ ok: true }), { status: 200 });
+				},
+			} as unknown as Fetcher;
+			env.UPLINK_CORE = fetcher;
+
+			await app.fetch(
+				new Request("http://localhost/v1/sources/src-1/trigger", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({ force: true }),
+				}),
+				env,
+			);
+
+			expect(JSON.parse(capturedBody ?? "{}")).toMatchObject({ force: true, triggeredBy: "edge" });
+		});
+
+		it("passes empty body when no params provided", async () => {
+			const env = createEnv();
+			let capturedBody: string | undefined;
+			const fetcher = {
+				fetch: async (url: string | Request, init?: RequestInit) => {
+					capturedBody = init?.body as string;
+					return new Response(JSON.stringify({ ok: true }), { status: 200 });
+				},
+			} as unknown as Fetcher;
+			env.UPLINK_CORE = fetcher;
+
+			await app.fetch(
+				new Request("http://localhost/v1/sources/src-1/trigger", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+				}),
+				env,
+			);
+
+			expect(JSON.parse(capturedBody ?? "{}")).toMatchObject({ triggeredBy: "edge" });
+		});
+	});
+});

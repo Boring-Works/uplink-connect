@@ -8,13 +8,15 @@
 		"deploy": "wrangler deploy",
 		"typecheck": "tsc --noEmit",
 		"build": "tsc --noEmit",
-		"types": "wrangler types"
+		"types": "wrangler types",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"hono": "^4.12.8"
 	},
 	"devDependencies": {
 		"typescript": "^5.8.3",
+		"vitest": "^3.0.9",
 		"wrangler": "^4.38.0"
 	}
 }

@@ -62,7 +62,11 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["SourceCoordinator", "BrowserManagerDO"]
+			"new_sqlite_classes": ["SourceCoordinator"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["BrowserManagerDO"]
 		}
 	],
 	"workflows": [

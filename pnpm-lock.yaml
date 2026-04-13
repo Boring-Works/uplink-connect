@@ -30,6 +30,9 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4
       wrangler:
         specifier: ^4.38.0
         version: 4.81.1(@cloudflare/workers-types@4.20260412.1)
@@ -77,6 +80,9 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4
       wrangler:
         specifier: ^4.38.0
         version: 4.81.1(@cloudflare/workers-types@4.20260412.1)
@@ -90,6 +96,9 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4
       wrangler:
         specifier: ^4.38.0
         version: 4.81.1(@cloudflare/workers-types@4.20260412.1)
@@ -99,12 +108,20 @@ importers:
       zod:
         specifier: ^3.24.2
         version: 3.25.76
+    devDependencies:
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4
 
   packages/normalizers:
     dependencies:
       '@uplink/contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4
 
   packages/source-adapters:
     dependencies:
@@ -114,6 +131,10 @@ importers:
       zod:
         specifier: ^3.24.2
         version: 3.25.76
+    devDependencies:
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4
 
 packages:
 

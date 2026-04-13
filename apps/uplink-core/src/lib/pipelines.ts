@@ -70,7 +70,7 @@ export type AnalyticsEvent =
 	| EntityCreatedEvent
 	| EntityUpdatedEvent;
 
-function hasPipeline(env: unknown): env is { ANALYTICS_PIPELINE: Pipeline } {
+export function hasPipeline(env: unknown): env is { ANALYTICS_PIPELINE: Pipeline } {
 	return (
 		typeof env === "object" &&
 		env !== null &&
