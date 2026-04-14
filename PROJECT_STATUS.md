@@ -33,11 +33,12 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **D1 Database** | ✅ Provisioned | 10 migrations applied |
+| **D1 Database** | ✅ Provisioned | 11 migrations applied |
 | **R2 Storage** | ✅ Provisioned | Raw artifacts bucket |
 | **Queues** | ✅ Active | Ingest queue + DLQ |
 | **Vectorize** | ✅ Provisioned | Entity search index |
 | **Analytics Engine** | ✅ Active | Metrics dataset |
+| **KV (Alert Cache)** | ✅ Active | Alert deduplication namespace |
 
 ### Features Delivered
 
@@ -60,20 +61,22 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Rate limiting and backpressure
 - ✅ Automatic retries via Workflows
 - ✅ Failure tracking and auto-pause
+- ✅ DO concurrency safety - `blockConcurrencyWhile` on all POST mutations in `SourceCoordinator`
 
 #### Observability & Operations
 - ✅ **Visual HTML Dashboard** - Self-hosted with auto-refresh and WebSocket real-time updates
 - ✅ **Pipeline Topology** - Visual flow with health status
-- ✅ **Component Health** - Live health checks of all services
+- ✅ **Component Health** - Deep health checks of all services with real dependency probes (D1, R2, Vectorize, Analytics Engine, DO, AI binding)
 - ✅ **Data Flow Metrics** - Records/sec, latency, error rates
 - ✅ **Source Health Timeline** - Time-series health data
 - ✅ **Run Tracing** - Full lineage with children/errors/artifacts
 - ✅ **Entity Lineage** - Complete history with change diffs
 - ✅ **Settings Management** - Platform configuration with audit log
-- ✅ **Alerting System** - Active alerts with severity levels
+- ✅ **Alerting System** - Active alerts with severity levels and KV deduplication (1-hour TTL)
 - ✅ **Metrics Pipeline** - Analytics Engine integration
 - ✅ **RAG Error Agent** - AI-powered error diagnosis via WebSocket with Vectorize search
 - ✅ **Data Export API** - Export runs, entities, and errors in JSON, CSV, or NDJSON
+- ✅ **Error Deduplication** - SHA-256 hash-based dedup in `ingest_errors` with occurrence counting (migration 0011)
 
 #### Security & Access Control
 - ✅ Bearer token auth for external endpoints
@@ -162,7 +165,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 7. `entities_current` - Canonical entity state
 8. `entity_observations` - Historical observations
 9. `entity_links` - Entity relationships
-10. `ingest_errors` - Error tracking with retry state
+10. `ingest_errors` - Error tracking with retry state and hash deduplication
 11. `retry_idempotency_keys` - Idempotency tracking
 12. `retention_audit_log` - Cleanup audit trail
 13. `alerts_active` - Active alerts
@@ -172,7 +175,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 17. `source_schedules` - Cron-driven source schedules
 18. `notification_deliveries` - Notification delivery tracking
 
-### 10 Migrations Applied
+### 11 Migrations Applied
 - 0001_control_schema.sql
 - 0002_source_registry.sql
 - 0003_entity_plane.sql
@@ -183,6 +186,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - 0008_add_missing_columns.sql
 - 0009_notification_deliveries.sql
 - 0010_source_schedules.sql
+- 0011_error_dedup_hash.sql
 
 ---
 
@@ -217,8 +221,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
 | Test Coverage | 554 tests |
-| Migrations | 10 |
-| Live Data Sources | 5 (USGS, GitHub, HN, exchange rates, NWS weather) |
+| Migrations | 11 |
+| Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Last Verified | April 14, 2026 |
 | Documentation | 11 files, ~3,750 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
@@ -246,6 +250,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ SSRF protection on notification tests
 - ✅ Cron expression validation on schedule APIs
 - ✅ Secure cookie flags for dashboard auth
+- ✅ Deep health checks with real dependency probes
+- ✅ KV-based alert deduplication
+- ✅ Error deduplication by SHA-256 hash
+- ✅ DO concurrency safety with `blockConcurrencyWhile`
 
 ---
 
@@ -315,10 +323,17 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ## Recent Changes (April 14, 2026)
 
+### Reliability & Observability Improvements
+- **Deep health checks** - `/health` endpoints now perform real dependency probes (D1, R2, Vectorize, Analytics Engine, DO, AI binding)
+- **KV alert deduplication** - `NotificationDispatcher` checks `ALERT_CACHE` KV before sending alerts, 1-hour TTL prevents alert spam
+- **Error deduplication by hash** - `recordIngestError` computes SHA-256 hash of cleaned message and increments `occurrence_count` for duplicate unresolved errors instead of inserting new rows. New migration `0011_error_dedup_hash.sql`
+- **DO concurrency safety** - All POST mutations in `SourceCoordinator` are wrapped with `blockConcurrencyWhile` for atomicity
+- **AI binding fix** - Added missing `"ai": { "binding": "AI" }` to `wrangler.jsonc`; `ai-binding` health check now passes
+
 ### Security Audit Fixes
 - **Password form submission** changed from GET query param to POST form data
 - **Secure cookie flag** added to dashboard auth cookie for HTTPS deployments
-- **Settings save endpoint** added `POST /settings` so the HTML page works without internal API key
+- **Settings save endpoint** added `POST /settings` so the HTML settings page works without internal API key
 - **Cron validation** added to `/internal/schedules` to reject invalid or malicious expressions
 - **SSRF protection** on notification test URLs blocks private IPs, localhost, and non-HTTP(S) schemes
 - **XSS fixes** across dashboard and scheduler HTML pages (all user-controlled values escaped)
@@ -348,9 +363,6 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - **Exchange Rates**: exchangerate-api.com USD base
   - Source ID: `exchange-rates-daily`
   - Proves: Financial data, deeply nested JSON
-- **NWS Tennessee Weather**: National Weather Service API
-  - Source ID: `nws-weather-tn`
-  - Proves: Multi-step API traversal, geospatial data, severity-graded alerts
 - All verified: entities in D1, artifacts in R2, dashboard shows live flow
 - Setup script: `scripts/setup-public-sources.sh`
 - Scheduler settings UI is live at `/scheduler` — per-source cron schedules can be configured dynamically

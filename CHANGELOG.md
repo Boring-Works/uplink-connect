@@ -70,6 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Setup script: `scripts/setup-public-sources.sh`
   - **Note:** Hard-coded scheduled auto-triggers removed. Manual trigger via API/dashboard until scheduler settings UI is built.
 
+#### Reliability & Observability Improvements
+- **Deep health checks** - `/health` endpoints now perform real dependency probes (D1, R2, Vectorize, Analytics Engine, DO, AI binding)
+- **KV alert deduplication** - `NotificationDispatcher` checks `ALERT_CACHE` KV before sending alerts, 1-hour TTL prevents alert spam
+- **Error deduplication by hash** - `recordIngestError` computes SHA-256 hash of cleaned message and increments `occurrence_count` for duplicate unresolved errors instead of inserting new rows. New migration `0011_error_dedup_hash.sql`
+- **DO concurrency safety** - All POST mutations in `SourceCoordinator` are wrapped with `blockConcurrencyWhile` for atomicity
+
 #### Security & Audit Fixes
 - **Dashboard auth** - Password submission changed from GET query param to POST form data
 - **Secure cookies** - Auth cookie now includes `Secure` flag on HTTPS deployments
