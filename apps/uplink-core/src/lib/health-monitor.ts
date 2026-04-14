@@ -260,6 +260,67 @@ export async function getComponentHealth(env: Env): Promise<ComponentHealth[]> {
 		});
 	}
 
+	// Check Workers AI binding
+	try {
+		const start = Date.now();
+		await env.AI.run("@cf/baai/bge-small-en-v1.5", { text: ["health-check"] });
+		const latency = Date.now() - start;
+		components.push({
+			id: "ai-binding",
+			name: "Workers AI",
+			type: "external",
+			status: latency > 5000 ? "degraded" : "healthy",
+			lastCheckedAt: now,
+			latencyMs: latency,
+			metadata: {
+				purpose: "Embeddings and LLM inference",
+			},
+		});
+	} catch {
+		components.push({
+			id: "ai-binding",
+			name: "Workers AI",
+			type: "external",
+			status: "unhealthy",
+			lastCheckedAt: now,
+			metadata: {
+				purpose: "Embeddings and LLM inference",
+			},
+		});
+	}
+
+	// Check Durable Object availability (coordinator stub)
+	try {
+		const coordinator = getCoordinatorStub(env, "health-check");
+		const doStart = Date.now();
+		const doRes = await coordinator.fetch("https://source-coordinator/health", {
+			method: "GET",
+		});
+		const doLatency = Date.now() - doStart;
+		components.push({
+			id: "do-coordinator",
+			name: "Source Coordinator DO",
+			type: "durable_object",
+			status: doRes.ok ? (doLatency > 1000 ? "degraded" : "healthy") : "degraded",
+			lastCheckedAt: now,
+			latencyMs: doLatency,
+			metadata: {
+				purpose: "Per-source lease and cursor management",
+			},
+		});
+	} catch {
+		components.push({
+			id: "do-coordinator",
+			name: "Source Coordinator DO",
+			type: "durable_object",
+			status: "unhealthy",
+			lastCheckedAt: now,
+			metadata: {
+				purpose: "Per-source lease and cursor management",
+			},
+		});
+	}
+
 	return components;
 }
 

@@ -16,7 +16,16 @@ const CollectRequestSchema = z.object({
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/health", (c) => c.json({ ok: true, service: "uplink-browser", now: new Date().toISOString() }));
+app.get("/health", (c) => {
+	const browserBinding = !!c.env.BROWSER;
+	return c.json({
+		ok: browserBinding,
+		service: "uplink-browser",
+		status: browserBinding ? "healthy" : "degraded",
+		checks: [{ name: "browser-binding", status: browserBinding ? "healthy" : "degraded" }],
+		now: new Date().toISOString(),
+	});
+});
 
 function isAllowedBrowserUrl(urlStr: string): boolean {
 	try {

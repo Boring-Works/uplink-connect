@@ -481,6 +481,7 @@ export const ErrorListItemSchema = z.object({
 	errorMessage: z.string(),
 	status: ErrorStatusSchema,
 	retryCount: z.number().int(),
+	occurrenceCount: z.number().int().optional(),
 	lastRetryAt: z.string().datetime().nullable(),
 	createdAt: z.string().datetime(),
 	payloadPreview: z.string().optional(),

@@ -432,6 +432,31 @@ export async function insertRunIfMissing(
 		.run();
 }
 
+function cleanErrorMessage(message: string): string {
+	return message
+		.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?/g, "<TIMESTAMP>")
+		.replace(/:\d{4,5}\b/g, ":<PORT>")
+		.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<UUID>")
+		.replace(/\b0x[0-9a-f]+\b/gi, "<HEX>")
+		.replace(/\d+/g, "<N>");
+}
+
+async function hashError(params: {
+	phase: string;
+	errorCode: string;
+	errorMessage: string;
+	sourceId?: string;
+}): Promise<string> {
+	const cleaned = cleanErrorMessage(params.errorMessage);
+	const input = `${params.phase}::${params.errorCode}::${params.sourceId ?? ""}::${cleaned}`;
+	const encoder = new TextEncoder();
+	const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(input));
+	return Array.from(new Uint8Array(hashBuffer))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("")
+		.slice(0, 32);
+}
+
 export async function recordIngestError(
 	db: D1Database,
 	params: {
@@ -449,13 +474,35 @@ export async function recordIngestError(
 ): Promise<string> {
 	const errorId = crypto.randomUUID();
 	const classification = classifyError(new Error(params.errorMessage));
+	const errorHash = await hashError(params);
+
+	// Try to increment occurrence count for existing unresolved error with same hash
+	const updateResult = await db.prepare(
+		`UPDATE ingest_errors SET
+			occurrence_count = occurrence_count + 1,
+			updated_at = unixepoch(),
+			last_retry_at = COALESCE(?, last_retry_at),
+			retry_count = COALESCE(?, retry_count)
+		WHERE error_hash = ? AND status IN ('pending', 'retrying')
+		RETURNING error_id`
+	)
+		.bind(
+			params.retryCount != null ? Date.now() / 1000 : null,
+			params.retryCount ?? null,
+			errorHash,
+		)
+		.first<{ error_id: string }>();
+
+	if (updateResult) {
+		return updateResult.error_id;
+	}
 
 	await db.prepare(
 		`INSERT INTO ingest_errors (
-			error_id, run_id, source_id, phase, error_code, error_message,
+			error_id, run_id, source_id, phase, error_code, error_message, error_hash,
 			payload, status, retry_count, max_retries, error_category, retry_attempts_json,
-			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())`,
+			occurrence_count, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())`,
 	)
 		.bind(
 			errorId,
@@ -464,12 +511,14 @@ export async function recordIngestError(
 			params.phase,
 			params.errorCode,
 			params.errorMessage,
+			errorHash,
 			params.payload ?? null,
 			params.status ?? "pending",
 			params.retryCount ?? 0,
 			3, // default max_retries
 			params.errorCategory ?? classification.errorCategory,
 			JSON.stringify(params.retryAttempts ?? []),
+			1,
 		)
 		.run();
 
@@ -534,9 +583,9 @@ export async function getIngestError(
 ): Promise<Record<string, unknown> | null> {
 	const row = await db
 		.prepare(
-			`SELECT error_id, run_id, source_id, phase, error_code, error_message,
+			`SELECT error_id, run_id, source_id, phase, error_code, error_message, error_hash,
 			payload, status, retry_count, max_retries, error_category, retry_attempts_json,
-			last_retry_at, created_at, resolved_at, resolved_by, resolution_notes
+			last_retry_at, created_at, resolved_at, resolved_by, resolution_notes, occurrence_count
 			FROM ingest_errors
 			WHERE error_id = ?`,
 		)
@@ -593,7 +642,7 @@ export async function listIngestErrors(
 	const result = await db
 		.prepare(
 			`SELECT error_id, run_id, source_id, phase, error_code, error_message,
-			status, retry_count, last_retry_at, created_at,
+			status, retry_count, last_retry_at, created_at, occurrence_count,
 			CASE WHEN LENGTH(payload) > 200 THEN SUBSTR(payload, 1, 200) || '...' ELSE payload END as payload_preview
 			FROM ingest_errors
 			${whereClause}
@@ -612,6 +661,7 @@ export async function listIngestErrors(
 			retry_count: number;
 			last_retry_at: number | null;
 			created_at: number;
+			occurrence_count: number;
 			payload_preview: string | null;
 		}>();
 
@@ -624,6 +674,7 @@ export async function listIngestErrors(
 		errorMessage: row.error_message,
 		status: row.status,
 		retryCount: row.retry_count,
+		occurrenceCount: row.occurrence_count,
 		lastRetryAt: row.last_retry_at ? new Date(row.last_retry_at * 1000).toISOString() : null,
 		createdAt: new Date(row.created_at * 1000).toISOString(),
 		payloadPreview: row.payload_preview ?? undefined,

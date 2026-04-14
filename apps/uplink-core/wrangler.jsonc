@@ -101,6 +101,12 @@
 			"class_name": "RetentionWorkflow"
 		}
 	],
+	"kv_namespaces": [
+		{
+			"binding": "ALERT_CACHE",
+			"id": "uplink-alert-cache"
+		}
+	],
 	"queues": {
 		"consumers": [
 			{

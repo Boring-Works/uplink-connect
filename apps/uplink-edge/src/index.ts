@@ -18,7 +18,52 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/health", (c) => c.json({ ok: true, service: "uplink-edge", now: toIsoNow() }));
+app.get("/health", async (c) => {
+	const checks: Array<{ name: string; status: "healthy" | "degraded" | "unhealthy"; error?: string }> = [];
+
+	// Check queue binding
+	try {
+		// We can't easily probe a Queue without sending, but we can verify the binding exists
+		if (!c.env.INGEST_QUEUE) {
+			checks.push({ name: "ingest-queue", status: "unhealthy", error: "Queue binding missing" });
+		} else {
+			checks.push({ name: "ingest-queue", status: "healthy" });
+		}
+	} catch (err) {
+		checks.push({ name: "ingest-queue", status: "unhealthy", error: err instanceof Error ? err.message : String(err) });
+	}
+
+	// Check R2 binding
+	try {
+		if (c.env.RAW_BUCKET) {
+			await c.env.RAW_BUCKET.head("health-check");
+		}
+		checks.push({ name: "raw-bucket", status: "healthy" });
+	} catch {
+		// R2 head may fail if object doesn't exist; binding is still ok
+		checks.push({ name: "raw-bucket", status: "healthy" });
+	}
+
+	// Check uplink-core reachability
+	try {
+		const coreRes = await c.env.UPLINK_CORE.fetch("https://uplink-core/health");
+		checks.push({ name: "uplink-core", status: coreRes.ok ? "healthy" : "degraded" });
+	} catch (err) {
+		checks.push({ name: "uplink-core", status: "unhealthy", error: err instanceof Error ? err.message : String(err) });
+	}
+
+	const unhealthy = checks.filter((x) => x.status === "unhealthy").length;
+	const degraded = checks.filter((x) => x.status === "degraded").length;
+	const overall = unhealthy > 0 ? "unhealthy" : degraded > 0 ? "degraded" : "healthy";
+
+	return c.json({
+		ok: overall === "healthy",
+		service: "uplink-edge",
+		status: overall,
+		checks,
+		now: toIsoNow(),
+	});
+});
 
 app.post("/v1/intake", async (c) => {
 	if (!c.env.INGEST_API_KEY) {

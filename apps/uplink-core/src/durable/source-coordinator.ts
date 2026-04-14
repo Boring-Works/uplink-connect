@@ -117,35 +117,38 @@ export class SourceCoordinator extends DurableObject<Env> {
 
 		const body = await request.json().catch(() => null);
 
-		try {
-			switch (url.pathname) {
-				case "/lease/acquire":
-					return Response.json(await this.handleAcquireLease(body));
-				case "/lease/release":
-					return Response.json(await this.handleReleaseLease(body));
-				case "/cursor/advance":
-					return Response.json(await this.handleAdvanceCursor(body));
-				case "/state/success":
-					return Response.json(await this.handleSuccess(body));
-				case "/state/failure":
-					return Response.json(await this.handleFailure(body));
-				case "/admin/unpause":
-					return Response.json(await this.handleUnpause());
-				default:
-					return new Response("Not Found", { status: 404 });
-			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "Coordinator operation failed";
-			if (
-				message.includes("Invalid lease token") ||
-				message.includes("Lease expired") ||
-				message.includes("Backpressure")
-			) {
-				return new Response(message, { status: 409 });
-			}
+		// Wrap all mutating operations in blockConcurrencyWhile for atomicity
+		return this.ctx.blockConcurrencyWhile(async () => {
+			try {
+				switch (url.pathname) {
+					case "/lease/acquire":
+						return Response.json(await this.handleAcquireLease(body));
+					case "/lease/release":
+						return Response.json(await this.handleReleaseLease(body));
+					case "/cursor/advance":
+						return Response.json(await this.handleAdvanceCursor(body));
+					case "/state/success":
+						return Response.json(await this.handleSuccess(body));
+					case "/state/failure":
+						return Response.json(await this.handleFailure(body));
+					case "/admin/unpause":
+						return Response.json(await this.handleUnpause());
+					default:
+						return new Response("Not Found", { status: 404 });
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "Coordinator operation failed";
+				if (
+					message.includes("Invalid lease token") ||
+					message.includes("Lease expired") ||
+					message.includes("Backpressure")
+				) {
+					return new Response(message, { status: 409 });
+				}
 
-			return new Response(message, { status: 500 });
-		}
+				return new Response(message, { status: 500 });
+			}
+		});
 	}
 
 	private async handleAcquireLease(input: unknown): Promise<{

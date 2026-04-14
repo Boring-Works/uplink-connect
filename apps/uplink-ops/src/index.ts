@@ -9,7 +9,28 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/health", (c) => c.json({ ok: true, service: "uplink-ops", now: new Date().toISOString() }));
+app.get("/health", async (c) => {
+	const checks: Array<{ name: string; status: "healthy" | "degraded" | "unhealthy"; error?: string }> = [];
+
+	try {
+		const coreRes = await c.env.UPLINK_CORE.fetch("https://uplink-core/health");
+		checks.push({ name: "uplink-core", status: coreRes.ok ? "healthy" : "degraded" });
+	} catch (err) {
+		checks.push({ name: "uplink-core", status: "unhealthy", error: err instanceof Error ? err.message : String(err) });
+	}
+
+	const unhealthy = checks.filter((x) => x.status === "unhealthy").length;
+	const degraded = checks.filter((x) => x.status === "degraded").length;
+	const overall = unhealthy > 0 ? "unhealthy" : degraded > 0 ? "degraded" : "healthy";
+
+	return c.json({
+		ok: overall === "healthy",
+		service: "uplink-ops",
+		status: overall,
+		checks,
+		now: new Date().toISOString(),
+	});
+});
 
 app.use("/v1/*", async (c, next) => {
 	if (!c.env.OPS_API_KEY) {

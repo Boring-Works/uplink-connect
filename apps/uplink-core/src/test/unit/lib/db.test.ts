@@ -365,9 +365,10 @@ describe("insertRunIfMissing", () => {
 describe("recordIngestError", () => {
 	it("records error with classification", async () => {
 		const mockRun = vi.fn().mockResolvedValue({ success: true });
+		const mockFirst = vi.fn().mockResolvedValue(null);
 		const mockDb = {
 			prepare: vi.fn().mockReturnValue({
-				bind: vi.fn().mockReturnValue({ run: mockRun }),
+				bind: vi.fn().mockReturnValue({ run: mockRun, first: mockFirst }),
 			}),
 		} as unknown as D1Database;
 
@@ -380,14 +381,16 @@ describe("recordIngestError", () => {
 		});
 
 		expect(errorId).toBeDefined();
+		expect(mockFirst).toHaveBeenCalledTimes(1);
 		expect(mockRun).toHaveBeenCalledTimes(1);
 	});
 
 	it("uses provided error category over classification", async () => {
 		const mockRun = vi.fn().mockResolvedValue({ success: true });
+		const mockFirst = vi.fn().mockResolvedValue(null);
 		const mockDb = {
 			prepare: vi.fn().mockReturnValue({
-				bind: vi.fn().mockReturnValue({ run: mockRun }),
+				bind: vi.fn().mockReturnValue({ run: mockRun, first: mockFirst }),
 			}),
 		} as unknown as D1Database;
 
@@ -400,7 +403,30 @@ describe("recordIngestError", () => {
 		});
 
 		expect(errorId).toBeDefined();
+		expect(mockFirst).toHaveBeenCalledTimes(1);
 		expect(mockRun).toHaveBeenCalledTimes(1);
+	});
+
+	it("deduplicates repeated errors by hash", async () => {
+		const mockRun = vi.fn().mockResolvedValue({ success: true });
+		const mockFirst = vi.fn().mockResolvedValue({ error_id: "existing-err" });
+		const mockDb = {
+			prepare: vi.fn().mockReturnValue({
+				bind: vi.fn().mockReturnValue({ run: mockRun, first: mockFirst }),
+			}),
+		} as unknown as D1Database;
+
+		const errorId = await recordIngestError(mockDb, {
+			runId: "run-1",
+			sourceId: "src-1",
+			phase: "processing",
+			errorCode: "E500",
+			errorMessage: "network timeout",
+		});
+
+		expect(errorId).toBe("existing-err");
+		expect(mockFirst).toHaveBeenCalledTimes(1);
+		expect(mockRun).toHaveBeenCalledTimes(0); // UPDATE uses first() with RETURNING, not run()
 	});
 });
 

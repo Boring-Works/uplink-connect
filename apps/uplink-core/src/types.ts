@@ -26,6 +26,7 @@ export type Env = {
 	ERROR_AGENT: DurableObjectNamespace<ErrorAgentDO>;
 	COLLECTION_WORKFLOW: Workflow;
 	RETENTION_WORKFLOW: Workflow;
+	ALERT_CACHE?: KVNamespace;
 	CORE_INTERNAL_KEY?: string;
 	BROWSER_API_KEY?: string;
 	SLACK_WEBHOOK_URL?: string;
