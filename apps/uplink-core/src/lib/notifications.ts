@@ -1,10 +1,78 @@
 import type { Env } from "../types";
 import type { Alert, AlertConfiguration } from "./alerting";
+import type { NotificationPayload, ProviderConfig } from "./notifications/types";
+import type { ProviderWithId } from "./notifications/types";
+import { dispatchNotifications, buildProviderFromConfig } from "./notifications/dispatcher";
+import {
+	createWebhookProvider,
+	createSlackProvider,
+	createEmailProvider,
+} from "./notifications/providers";
+import { buildProviderPayload } from "./notifications/base";
 
-export interface NotificationPayload {
+export interface LegacyNotificationPayload {
 	alert: Alert;
 	sourceName?: string;
 	actionUrl?: string;
+}
+
+function buildProvidersFromLegacyConfig(
+	config: AlertConfiguration,
+	env: Env,
+): ProviderWithId[] {
+	const providers: ProviderWithId[] = [];
+
+	if (config.notificationChannels?.webhook) {
+		providers.push({
+			providerId: "legacy-webhook",
+			config: { type: "webhook", url: config.notificationChannels.webhook },
+		});
+	}
+
+	if (env.SLACK_WEBHOOK_URL) {
+		providers.push({
+			providerId: "legacy-slack",
+			config: { type: "slack", webhookUrl: env.SLACK_WEBHOOK_URL },
+		});
+	}
+
+	if (config.notificationChannels?.email?.length) {
+		providers.push({
+			providerId: "legacy-email",
+			config: { type: "email", to: config.notificationChannels.email },
+		});
+	}
+
+	// Also include new-style providers
+	for (const [index, provider] of (config.providers ?? []).entries()) {
+		providers.push({
+			providerId: provider.providerId ?? `provider-${index}`,
+			config: provider as unknown as ProviderConfig,
+		});
+	}
+
+	return providers;
+}
+
+function buildRoutesFromLegacyConfig(config: AlertConfiguration) {
+	const routes = config.routes ?? [];
+
+	// Add legacy routes for backward compatibility
+	if (config.notificationChannels?.webhook) {
+		routes.push({
+			providerId: "legacy-webhook",
+			enabled: true,
+		});
+	}
+
+	if (config.notificationChannels?.email?.length) {
+		routes.push({
+			providerId: "legacy-email",
+			enabled: true,
+		});
+	}
+
+	return routes;
 }
 
 /**
@@ -16,114 +84,25 @@ export async function sendNotification(
 	config: AlertConfiguration,
 	sourceName?: string,
 ): Promise<{ sent: boolean; errors: string[] }> {
-	const errors: string[] = [];
-	let sent = false;
+	const providers = buildProvidersFromLegacyConfig(config, env);
+	const routes = buildRoutesFromLegacyConfig(config);
 
-	const payload: NotificationPayload = {
-		alert,
-		sourceName,
-		actionUrl: `https://uplink.internal/alerts/${alert.alertId}`,
-	};
-
-	// Send to webhook if configured
-	if (config.notificationChannels?.webhook) {
-		try {
-			await sendWebhookNotification(config.notificationChannels.webhook, payload);
-			sent = true;
-		} catch (error) {
-			errors.push(`Webhook failed: ${error instanceof Error ? error.message : String(error)}`);
-		}
+	if (providers.length === 0 || routes.length === 0) {
+		return { sent: false, errors: [] };
 	}
 
-	// Send to Slack if SLACK_WEBHOOK_URL is configured
-	if (env.SLACK_WEBHOOK_URL) {
-		try {
-			await sendSlackNotification(env.SLACK_WEBHOOK_URL, payload);
-			sent = true;
-		} catch (error) {
-			errors.push(`Slack failed: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
+	try {
+		const id = env.NOTIFICATION_DISPATCHER.idFromName("global");
+		const dispatcher = env.NOTIFICATION_DISPATCHER.get(id);
+		const result = await dispatcher.dispatch(alert, providers, routes, sourceName);
 
-	return { sent, errors };
-}
-
-async function sendWebhookNotification(url: string, payload: NotificationPayload): Promise<void> {
-	const response = await fetch(url, {
-		method: "POST",
-		headers: {
-			"content-type": "application/json",
-		},
-		body: JSON.stringify({
-			alertId: payload.alert.alertId,
-			alertType: payload.alert.alertType,
-			severity: payload.alert.severity,
-			message: payload.alert.message,
-			recommendedAction: payload.alert.recommendedAction,
-			sourceId: payload.alert.sourceId,
-			sourceName: payload.sourceName,
-			actionUrl: payload.actionUrl,
-			timestamp: new Date().toISOString(),
-		}),
-	});
-
-	if (!response.ok) {
-		throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-	}
-}
-
-async function sendSlackNotification(url: string, payload: NotificationPayload): Promise<void> {
-	const color = payload.alert.severity === "critical" ? "#FF0000" : "#FFA500";
-	const emoji = payload.alert.severity === "critical" ? ":rotating_light:" : ":warning:";
-
-	const slackPayload = {
-		text: `${emoji} Uplink Alert: ${payload.alert.severity.toUpperCase()}`,
-		attachments: [
-			{
-				color,
-				fields: [
-					{
-						title: "Alert Type",
-						value: payload.alert.alertType,
-						short: true,
-					},
-					{
-						title: "Severity",
-						value: payload.alert.severity,
-						short: true,
-					},
-					{
-						title: "Source",
-						value: payload.sourceName ?? payload.alert.sourceId ?? "N/A",
-						short: true,
-					},
-					{
-						title: "Message",
-						value: payload.alert.message,
-						short: false,
-					},
-					{
-						title: "Recommended Action",
-						value: payload.alert.recommendedAction,
-						short: false,
-					},
-				],
-				footer: "Uplink Connect",
-				ts: Math.floor(Date.now() / 1000),
-			},
-		],
-	};
-
-	const response = await fetch(url, {
-		method: "POST",
-		headers: {
-			"content-type": "application/json",
-		},
-		body: JSON.stringify(slackPayload),
-	});
-
-	if (!response.ok) {
-		throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+		return {
+			sent: result.sent > 0,
+			errors: result.errors,
+		};
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
+		return { sent: false, errors: [`Dispatcher failed: ${msg}`] };
 	}
 }
 
@@ -132,7 +111,7 @@ async function sendSlackNotification(url: string, payload: NotificationPayload):
  */
 export async function testNotificationChannel(
 	env: Env,
-	channel: "webhook" | "slack",
+	channel: "webhook" | "slack" | "discord" | "teams" | "pagerduty" | "opsgenie" | "email" | "custom",
 	testUrl?: string,
 ): Promise<{ success: boolean; error?: string }> {
 	const testAlert: Alert = {
@@ -145,21 +124,72 @@ export async function testNotificationChannel(
 		acknowledged: false,
 	};
 
-	const testConfig: AlertConfiguration = {
-		alertRules: [],
-		notificationChannels: {
-			webhook: channel === "webhook" ? testUrl : undefined,
-		},
-	};
+	let providerConfig: ProviderConfig;
 
-	if (channel === "slack" && !env.SLACK_WEBHOOK_URL) {
-		return { success: false, error: "SLACK_WEBHOOK_URL not configured" };
+	switch (channel) {
+		case "webhook":
+			if (!testUrl) return { success: false, error: "URL required for webhook test" };
+			providerConfig = { type: "webhook", url: testUrl };
+			break;
+		case "slack":
+			if (!testUrl && !env.SLACK_WEBHOOK_URL) {
+				return { success: false, error: "SLACK_WEBHOOK_URL not configured" };
+			}
+			providerConfig = { type: "slack", webhookUrl: testUrl ?? env.SLACK_WEBHOOK_URL! };
+			break;
+		case "discord":
+			if (!testUrl) return { success: false, error: "URL required for Discord test" };
+			providerConfig = { type: "discord", webhookUrl: testUrl };
+			break;
+		case "teams":
+			if (!testUrl) return { success: false, error: "URL required for Teams test" };
+			providerConfig = { type: "teams", webhookUrl: testUrl };
+			break;
+		case "pagerduty":
+			if (!testUrl) return { success: false, error: "Routing key required for PagerDuty test" };
+			providerConfig = { type: "pagerduty", routingKey: testUrl };
+			break;
+		case "opsgenie":
+			if (!testUrl) return { success: false, error: "API key required for OpsGenie test" };
+			providerConfig = { type: "opsgenie", apiKey: testUrl };
+			break;
+		case "email":
+			if (!testUrl) return { success: false, error: "Email address required for email test" };
+			providerConfig = { type: "email", to: [testUrl] };
+			break;
+		case "custom":
+			if (!testUrl) return { success: false, error: "URL required for custom test" };
+			providerConfig = { type: "custom", url: testUrl, method: "POST" };
+			break;
+		default:
+			return { success: false, error: `Unknown channel: ${channel}` };
 	}
 
-	const result = await sendNotification(env, testAlert, testConfig);
+	try {
+		const provider = buildProviderFromConfigForTest(providerConfig);
+		const payload = buildProviderPayload(testAlert);
+		const result = await provider.send(payload);
+		return {
+			success: result.sent,
+			error: result.error,
+		};
+	} catch (error) {
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
 
-	return {
-		success: result.sent,
-		error: result.errors.join(", ") || undefined,
-	};
+function buildProviderFromConfigForTest(config: ProviderConfig) {
+	switch (config.type) {
+		case "webhook":
+			return createWebhookProvider(config.url, config.headers);
+		case "slack":
+			return createSlackProvider(config.webhookUrl, config.channel, config.username);
+		case "email":
+			return createEmailProvider(config.to, config.from, config.subjectTemplate);
+		default:
+			return buildProviderFromConfig(config, "test");
+	}
 }

@@ -47,7 +47,7 @@ app.post("/internal/alerts/check", async (c) => {
 		alertConfig = parseAlertConfiguration(null);
 	}
 
-	const result = await runAllAlertChecks(c.env.CONTROL_DB, alertConfig);
+	const result = await runAllAlertChecks(c.env.CONTROL_DB, alertConfig, c.env);
 	const resolved = await autoResolveAlerts(c.env.CONTROL_DB);
 
 	return c.json({

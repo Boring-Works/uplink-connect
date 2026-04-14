@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import type { ProviderWithId, NotificationRoute } from "./notifications/types";
 
 export type AlertSeverity = "warning" | "critical";
 
@@ -30,6 +31,8 @@ export interface Alert {
 
 export interface AlertConfiguration {
 	alertRules: AlertRule[];
+	providers?: ProviderWithId[];
+	routes?: NotificationRoute[];
 	notificationChannels?: {
 		webhook?: string;
 		email?: string[];
@@ -203,7 +206,10 @@ export async function listActiveAlerts(
 export async function createAlert(
 	db: D1Database,
 	alert: Omit<Alert, "alertId" | "createdAt">,
-): Promise<{ created: boolean; alertId?: string }> {
+	env?: Env,
+	alertConfig?: AlertConfiguration,
+	sourceName?: string,
+): Promise<{ created: boolean; alertId?: string; notifications?: { sent: number; failed: number; throttled: number; errors: string[] } }> {
 	const alertId = crypto.randomUUID();
 	const dedupKey = getAlertKey(
 		alert.alertType,
@@ -240,7 +246,40 @@ export async function createAlert(
 		return { created: false };
 	}
 
-	return { created: true, alertId };
+	// Dispatch notifications if env and config provided
+	let notifications: { sent: number; failed: number; throttled: number; errors: string[] } | undefined;
+	if (env && alertConfig?.providers?.length && alertConfig?.routes?.length) {
+		const fullAlert: Alert = { ...alert, alertId, createdAt: now, acknowledged: alert.acknowledged ?? false };
+		notifications = await dispatchAlertNotifications(env, fullAlert, alertConfig, sourceName);
+	}
+
+	return { created: true, alertId, notifications };
+}
+
+async function dispatchAlertNotifications(
+	env: Env,
+	alert: Alert,
+	alertConfig: AlertConfiguration,
+	sourceName?: string,
+): Promise<{ sent: number; failed: number; throttled: number; errors: string[] }> {
+	try {
+		const { dispatchNotifications } = await import("./notifications/dispatcher");
+		const result = await dispatchNotifications(
+			alertConfig.providers ?? [],
+			alertConfig.routes ?? [],
+			alert,
+			sourceName,
+		);
+		return {
+			sent: result.sent,
+			failed: result.failed,
+			throttled: 0,
+			errors: result.errors,
+		};
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
+		return { sent: 0, failed: 0, throttled: 0, errors: [`Dispatcher failed: ${msg}`] };
+	}
 }
 
 export async function acknowledgeAlert(
@@ -440,6 +479,7 @@ export async function evaluateExpiredLeases(
 export async function runAllAlertChecks(
 	db: D1Database,
 	alertConfig: AlertConfiguration,
+	env?: Env,
 ): Promise<{ alertsCreated: number; checksRun: number; errors: string[] }> {
 	const errors: string[] = [];
 	let alertsCreated = 0;
@@ -454,9 +494,9 @@ export async function runAllAlertChecks(
 					// Get all active sources
 					const sources = await db
 						.prepare(
-							"SELECT source_id FROM source_configs WHERE status = 'active'",
+							"SELECT source_id, name FROM source_configs WHERE status = 'active'",
 						)
-						.all<{ source_id: string }>();
+						.all<{ source_id: string; name: string }>();
 
 					for (const source of sources.results ?? []) {
 						checksRun++;
@@ -475,7 +515,7 @@ export async function runAllAlertChecks(
 								message: evalResult.message!,
 								recommendedAction: getRecommendedAction(rule.alertType, rule.severity),
 								acknowledged: false,
-							});
+							}, env, alertConfig, source.name);
 							if (createResult.created) alertsCreated++;
 						}
 					}
@@ -493,7 +533,7 @@ export async function runAllAlertChecks(
 							message: evalResult.message!,
 							recommendedAction: getRecommendedAction(rule.alertType, rule.severity),
 							acknowledged: false,
-						});
+						}, env, alertConfig);
 						if (createResult.created) alertsCreated++;
 					}
 					break;
@@ -512,7 +552,7 @@ export async function runAllAlertChecks(
 							message: stuck.message,
 							recommendedAction: getRecommendedAction(rule.alertType, rule.severity),
 							acknowledged: false,
-						});
+						}, env, alertConfig);
 						if (createResult.created) alertsCreated++;
 					}
 					break;
@@ -530,7 +570,7 @@ export async function runAllAlertChecks(
 							message: expired.message,
 							recommendedAction: getRecommendedAction(rule.alertType, rule.severity),
 							acknowledged: false,
-						});
+						}, env, alertConfig);
 						if (createResult.created) alertsCreated++;
 					}
 					break;

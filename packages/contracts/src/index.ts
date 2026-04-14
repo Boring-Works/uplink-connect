@@ -20,8 +20,75 @@ export const AlertRuleSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
+export const NotificationProviderTypeSchema = z.enum([
+	"webhook",
+	"slack",
+	"discord",
+	"teams",
+	"pagerduty",
+	"opsgenie",
+	"email",
+	"custom",
+]);
+
+export const NotificationProviderSchema = z.discriminatedUnion("type", [
+	z.object({
+		type: z.literal("webhook"),
+		url: z.string().url(),
+		headers: z.record(z.string()).optional(),
+	}),
+	z.object({
+		type: z.literal("slack"),
+		webhookUrl: z.string().url(),
+		channel: z.string().optional(),
+		username: z.string().optional(),
+	}),
+	z.object({
+		type: z.literal("discord"),
+		webhookUrl: z.string().url(),
+	}),
+	z.object({
+		type: z.literal("teams"),
+		webhookUrl: z.string().url(),
+	}),
+	z.object({
+		type: z.literal("pagerduty"),
+		routingKey: z.string().min(1),
+		severity: z.enum(["critical", "error", "warning", "info"]).optional(),
+	}),
+	z.object({
+		type: z.literal("opsgenie"),
+		apiKey: z.string().min(1),
+		responders: z.array(z.string()).optional(),
+	}),
+	z.object({
+		type: z.literal("email"),
+		to: z.array(z.string().email()).min(1),
+		from: z.string().email().optional(),
+		subjectTemplate: z.string().optional(),
+	}),
+	z.object({
+		type: z.literal("custom"),
+		url: z.string().url(),
+		method: z.enum(["GET", "POST", "PUT", "PATCH"]).default("POST"),
+		headers: z.record(z.string()).optional(),
+		bodyTemplate: z.string().optional(),
+	}),
+]);
+
+export const NotificationRouteSchema = z.object({
+	providerId: z.string().min(1),
+	severityFilter: z.array(AlertSeveritySchema).optional(),
+	alertTypeFilter: z.array(AlertTypeSchema).optional(),
+	sourceIdFilter: z.array(z.string().min(1)).optional(),
+	enabled: z.boolean().default(true),
+});
+
 export const AlertConfigurationSchema = z.object({
 	alertRules: z.array(AlertRuleSchema).default([]),
+	providers: z.array(NotificationProviderSchema).default([]),
+	routes: z.array(NotificationRouteSchema).default([]),
+	// Legacy fields preserved for backwards compatibility
 	notificationChannels: z.object({
 		webhook: z.string().url().optional(),
 		email: z.array(z.string().email()).optional(),

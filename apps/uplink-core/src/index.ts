@@ -4,6 +4,7 @@ import { ensureInternalAuth } from "./lib/auth";
 import { processQueueBatch } from "./lib/processing";
 import { SourceCoordinator } from "./durable/source-coordinator";
 import { BrowserManagerDO } from "./durable/browser-manager";
+import { NotificationDispatcher } from "./durable/notification-dispatcher";
 import { CollectionWorkflow } from "./workflows/collection-workflow";
 import { RetentionWorkflow } from "./workflows/retention-workflow";
 
@@ -19,6 +20,7 @@ import dashboardRoutes from "./routes/dashboard";
 import healthMonitorRoutes from "./routes/health-monitor";
 import settingsRoutes from "./routes/settings";
 import browserRoutes from "./routes/browser";
+import notificationRoutes from "./routes/notifications";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -46,6 +48,7 @@ app.route("/", dashboardRoutes);
 app.route("/", healthMonitorRoutes);
 app.route("/", settingsRoutes);
 app.route("/", browserRoutes);
+app.route("/", notificationRoutes);
 
 async function runSyntheticMonitoring(env: Env): Promise<void> {
 	const endpoints = [
@@ -90,4 +93,4 @@ export default {
 	},
 };
 
-export { SourceCoordinator, BrowserManagerDO, CollectionWorkflow, RetentionWorkflow };
+export { SourceCoordinator, BrowserManagerDO, NotificationDispatcher, CollectionWorkflow, RetentionWorkflow };

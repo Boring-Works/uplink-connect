@@ -1,0 +1,135 @@
+import { DurableObject } from "cloudflare:workers";
+import type { Env } from "../types";
+import type { Alert } from "../lib/alerting";
+import type { ProviderWithId, NotificationRoute } from "../lib/notifications/types";
+import { dispatchNotifications } from "../lib/notifications/dispatcher";
+
+interface RateLimitState {
+	lastSentAt: number;
+	countInWindow: number;
+}
+
+interface RetryJob {
+	alert: Alert;
+	providers: ProviderWithId[];
+	routes: NotificationRoute[];
+	sourceName?: string;
+	attempt: number;
+	retryAfter: number;
+}
+
+export class NotificationDispatcher extends DurableObject {
+	private rateLimits: Map<string, RateLimitState> = new Map();
+	private retryQueue: RetryJob[] = [];
+	private retryTimer: ReturnType<typeof setInterval> | null = null;
+
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		this.startRetryLoop();
+	}
+
+	async dispatch(
+		alert: Alert,
+		providers: ProviderWithId[],
+		routes: NotificationRoute[],
+		sourceName?: string,
+	): Promise<{ sent: number; failed: number; throttled: number; errors: string[] }> {
+		const now = Date.now();
+		const windowMs = 60_000; // 1 minute rate limit window
+		const maxPerWindow = 10; // max 10 notifications per provider per minute
+		const throttledRoutes: NotificationRoute[] = [];
+		const activeRoutes: NotificationRoute[] = [];
+
+		for (const route of routes) {
+			if (!route.enabled) continue;
+
+			const state = this.rateLimits.get(route.providerId) ?? { lastSentAt: 0, countInWindow: 0 };
+
+			// Reset window if expired
+			if (now - state.lastSentAt > windowMs) {
+				state.countInWindow = 0;
+			}
+
+			if (state.countInWindow >= maxPerWindow) {
+				throttledRoutes.push(route);
+			} else {
+				state.countInWindow++;
+				state.lastSentAt = now;
+				this.rateLimits.set(route.providerId, state);
+				activeRoutes.push(route);
+			}
+		}
+
+		// Dispatch non-throttled notifications immediately
+		const result = await dispatchNotifications(providers, activeRoutes, alert, sourceName);
+
+		// Queue throttled notifications for retry
+		for (const route of throttledRoutes) {
+			this.retryQueue.push({
+				alert,
+				providers,
+				routes: [route],
+				sourceName,
+				attempt: 1,
+				retryAfter: now + windowMs,
+			});
+		}
+
+		// Queue failed deliveries for retry
+		for (const delivery of result.deliveries) {
+			if (!delivery.sent) {
+				this.retryQueue.push({
+					alert,
+					providers,
+					routes: activeRoutes.filter((r) => r.providerId === delivery.providerId),
+					sourceName,
+					attempt: 1,
+					retryAfter: now + 30_000,
+				});
+			}
+		}
+
+		return {
+			sent: result.sent,
+			failed: result.failed,
+			throttled: throttledRoutes.length,
+			errors: result.errors,
+		};
+	}
+
+	private startRetryLoop(): void {
+		if (this.retryTimer) return;
+
+		this.retryTimer = setInterval(() => {
+			this.processRetries().catch((err) => {
+				console.error("[NotificationDispatcher] Retry loop error:", err);
+			});
+		}, 10_000);
+	}
+
+	private async processRetries(): Promise<void> {
+		const now = Date.now();
+		const ready = this.retryQueue.filter((job) => job.retryAfter <= now);
+		this.retryQueue = this.retryQueue.filter((job) => job.retryAfter > now);
+
+		for (const job of ready) {
+			if (job.attempt > 3) {
+				console.error("[NotificationDispatcher] Max retries exceeded for alert", job.alert.alertId);
+				continue;
+			}
+
+			const result = await dispatchNotifications(job.providers, job.routes, job.alert, job.sourceName);
+
+			for (const delivery of result.deliveries) {
+				if (!delivery.sent) {
+					this.retryQueue.push({
+						...job,
+						routes: job.routes.filter((r) => r.providerId === delivery.providerId),
+						attempt: job.attempt + 1,
+						retryAfter: now + job.attempt * 60_000,
+					});
+				}
+			}
+		}
+	}
+}

@@ -56,6 +56,10 @@
 			{
 				"name": "BROWSER_MANAGER",
 				"class_name": "BrowserManagerDO"
+			},
+			{
+				"name": "NOTIFICATION_DISPATCHER",
+				"class_name": "NotificationDispatcher"
 			}
 		]
 	},
@@ -67,6 +71,10 @@
 		{
 			"tag": "v2",
 			"new_sqlite_classes": ["BrowserManagerDO"]
+		},
+		{
+			"tag": "v3",
+			"new_sqlite_classes": ["NotificationDispatcher"]
 		}
 	],
 	"workflows": [
