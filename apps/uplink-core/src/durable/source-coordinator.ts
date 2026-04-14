@@ -341,8 +341,8 @@ export class SourceCoordinator extends DurableObject<Env> {
 			throw new Error("Invalid lease token for failure recording");
 		}
 
-		const consecutiveFailures = (this.snapshot.consecutiveFailures ?? 0) + 1;
 		const now = Date.now();
+		const consecutiveFailures = (this.backpressure.consecutiveFailures ?? 0) + 1;
 
 		this.snapshot = {
 			...this.snapshot,
@@ -356,8 +356,8 @@ export class SourceCoordinator extends DurableObject<Env> {
 			updatedAt: now,
 		};
 
-		// Update backpressure
-		this.backpressure.consecutiveFailures++;
+		// Update backpressure (keep in sync with snapshot)
+		this.backpressure.consecutiveFailures = consecutiveFailures;
 		this.backpressure.lastFailureAt = now;
 
 		// Auto-pause if too many consecutive failures

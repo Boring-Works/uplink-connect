@@ -249,7 +249,7 @@ app.post("/v1/sources/:sourceId/trigger", async (c) => {
 	const sourceId = c.req.param("sourceId");
 	const body = await c.req.json().catch(() => ({}));
 
-	const response = await c.env.UPLINK_CORE.fetch("https://uplink-core/internal/sources/" + sourceId + "/trigger", {
+	const response = await c.env.UPLINK_CORE.fetch(new URL("/internal/sources/" + sourceId + "/trigger", c.req.url).toString(), {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
@@ -267,8 +267,8 @@ function ensureDefaults(payload: unknown): IngestEnvelope {
 	return {
 		schemaVersion: "1.0",
 		ingestId: incoming.ingestId ?? crypto.randomUUID(),
-		sourceId: incoming.sourceId ?? "",
-		sourceName: incoming.sourceName ?? "",
+		sourceId: incoming.sourceId ?? "unknown",
+		sourceName: incoming.sourceName ?? "Unknown Source",
 		sourceType: incoming.sourceType ?? "api",
 		collectedAt: incoming.collectedAt ?? toIsoNow(),
 		records: incoming.records ?? [],

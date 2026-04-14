@@ -73,20 +73,28 @@ export async function ensureDashboardAuth(
 		}
 	}
 
-	// Check for form submission
-	const url = new URL(request.url);
-	const submittedPassword = url.searchParams.get("password") ?? "";
-	if (submittedPassword) {
-		const submittedHash = await hashPassword(submittedPassword);
-		if (timingSafeEqual(submittedHash, hash)) {
-			// Set cookie and redirect
-			const headers = new Headers();
-			headers.set(
-				"Set-Cookie",
-				`${PASSWORD_COOKIE_NAME}=${submittedPassword}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`,
-			);
-			headers.set("Location", options.returnPath);
-			return new Response(null, { status: 302, headers });
+	// Check for form submission via POST body
+	let passwordIncorrect = false;
+	if (request.method === "POST") {
+		try {
+			const formData = await request.formData();
+			const submittedPassword = formData.get("password")?.toString() ?? "";
+			if (submittedPassword) {
+				const submittedHash = await hashPassword(submittedPassword);
+				if (timingSafeEqual(submittedHash, hash)) {
+					// Set cookie and redirect
+					const headers = new Headers();
+					headers.set(
+						"Set-Cookie",
+						`${PASSWORD_COOKIE_NAME}=${submittedPassword}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${request.url.startsWith("https:") ? "; Secure" : ""}`,
+					);
+					headers.set("Location", options.returnPath);
+					return new Response(null, { status: 302, headers });
+				}
+				passwordIncorrect = true;
+			}
+		} catch {
+			// Invalid form data, fall through to gate
 		}
 	}
 
@@ -183,8 +191,8 @@ export async function ensureDashboardAuth(
 	<div class="gate">
 		<h1>${escapeHtml(options.pageTitle)}</h1>
 		<p>Enter the dashboard password to continue.</p>
-		${submittedPassword ? '<div class="error">Incorrect password. Please try again.</div>' : ''}
-		<form method="GET" action="${escapeHtml(options.returnPath)}">
+		${passwordIncorrect ? '<div class="error">Incorrect password. Please try again.</div>' : ''}
+		<form method="POST" action="${escapeHtml(options.returnPath)}">
 			<input type="password" name="password" placeholder="Password" autofocus required>
 			<button type="submit">Unlock</button>
 		</form>

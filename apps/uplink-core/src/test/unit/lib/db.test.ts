@@ -200,7 +200,7 @@ describe("setRunStatus", () => {
 		} as unknown as D1Database;
 
 		await setRunStatus(mockDb, "run-1", "failed", { errorMessage: "Something failed" });
-		expect(mockRun).toHaveBeenCalledTimes(2);
+		expect(mockRun).toHaveBeenCalledTimes(1);
 	});
 });
 

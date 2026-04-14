@@ -173,6 +173,7 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 		);
 
 		// Insert raw artifact with retry logic
+		const rawJsonBytes = new TextEncoder().encode(rawJson).length;
 		await withRetry(
 			() =>
 				env.CONTROL_DB.prepare(
@@ -182,7 +183,7 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 					) VALUES (?, ?, ?, ?, ?, ?, unixepoch())
 					ON CONFLICT(artifact_id) DO NOTHING`,
 				)
-					.bind(`${runId}:raw`, runId, envelope.sourceId, "raw-envelope", rawKey, rawJson.length)
+					.bind(`${runId}:raw`, runId, envelope.sourceId, "raw-envelope", rawKey, rawJsonBytes)
 					.run(),
 			D1_RETRY_POLICY,
 			{
@@ -279,7 +280,7 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 		const classification = classifyError(error);
 		const endedAt = toIsoNow();
 
-		// Check if this is a duplicate error - if so, treat as success
+		// Check if this is a duplicate error - if so, treat as success immediately
 		if (isDuplicateError(error)) {
 			logger.info("Duplicate detected, treating as success", { runId, sourceId: envelope.sourceId });
 			await setRunStatus(env.CONTROL_DB, runId, "normalized", {

@@ -63,6 +63,33 @@ app.get("/settings", async (c) => {
 	return c.html(html);
 });
 
+// HTML Settings Save (proxies to internal logic without requiring API key header)
+app.post("/settings", async (c) => {
+	const authCheck = await ensureDashboardAuth(c.req.raw, c.env, {
+		pageTitle: "Platform Settings",
+		returnPath: "/settings",
+	});
+	if (authCheck) return authCheck;
+
+	let body: Record<string, unknown> = {};
+	try {
+		body = await c.req.json();
+	} catch {
+		return c.json({ error: "Invalid JSON body" }, 400);
+	}
+
+	const updated = await saveSettings(c.env, body, "dashboard");
+
+	await logAuditEvent(c.env.CONTROL_DB, {
+		action: "settings.update",
+		actor: "dashboard",
+		resourceType: "settings",
+		details: { changedFields: Object.keys(body) },
+	});
+
+	return c.json(updated);
+});
+
 // HTML Audit Log Page
 app.get("/audit-log", async (c) => {
 	const authCheck = await ensureDashboardAuth(c.req.raw, c.env, {
@@ -292,11 +319,10 @@ function renderSettingsHtml(p: SettingsHtmlParams): string {
 				const body = JSON.parse(settingsInput.value);
 				saveBtn.disabled = true;
 				saveBtn.textContent = 'Saving...';
-				const res = await fetch('/internal/settings', {
-					method: 'PUT',
+				const res = await fetch('/settings', {
+					method: 'POST',
 					headers: {
-						'Content-Type': 'application/json',
-						'x-actor-id': 'dashboard'
+						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify(body)
 				});

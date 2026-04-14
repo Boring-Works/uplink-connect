@@ -353,6 +353,7 @@ export async function setRunStatus(
 			artifact_key = COALESCE(?, artifact_key),
 			workflow_instance_id = COALESCE(?, workflow_instance_id),
 			ended_at = COALESCE(?, ended_at),
+			error_message = COALESCE(?, error_message),
 			updated_at = unixepoch()
 		WHERE run_id = ?`,
 	)
@@ -363,18 +364,10 @@ export async function setRunStatus(
 			extra?.artifactKey ?? null,
 			extra?.workflowInstanceId ?? null,
 			extra?.endedAt ?? null,
+			extra?.errorMessage ?? null,
 			runId,
 		)
 		.run();
-
-	// Also update error message if provided
-	if (extra?.errorMessage) {
-		await db.prepare(
-			`UPDATE ingest_runs SET error_message = ? WHERE run_id = ?`
-		)
-			.bind(extra.errorMessage, runId)
-			.run();
-	}
 }
 
 export async function insertRunIfMissing(
@@ -719,49 +712,60 @@ export async function upsertNormalizedEntities(
 	runId: string,
 	entities: NormalizedEntity[],
 ): Promise<void> {
-	for (const entity of entities) {
-		await db.prepare(
-			`INSERT INTO entities_current (
-				entity_id, source_id, source_type, external_id, content_hash,
-				canonical_json, first_seen_at, last_observed_at, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
-			ON CONFLICT(entity_id) DO UPDATE SET
-				source_id = excluded.source_id,
-				source_type = excluded.source_type,
-				external_id = excluded.external_id,
-				content_hash = excluded.content_hash,
-				canonical_json = excluded.canonical_json,
-				last_observed_at = excluded.last_observed_at,
-				updated_at = unixepoch()`,
-		)
-			.bind(
-				entity.entityId,
-				entity.sourceId,
-				entity.sourceType,
-				entity.externalId ?? null,
-				entity.contentHash,
-				entity.canonicalJson,
-				entity.observedAt,
-				entity.observedAt,
-			)
-			.run();
+	if (entities.length === 0) return;
 
-		await db.prepare(
-			`INSERT INTO entity_observations (
-				observation_id, run_id, entity_id, source_id, content_hash,
-				observed_at, payload_json, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())`,
-		)
-			.bind(
-				crypto.randomUUID(),
-				runId,
-				entity.entityId,
-				entity.sourceId,
-				entity.contentHash,
-				entity.observedAt,
-				entity.canonicalJson,
+	const statements: D1PreparedStatement[] = [];
+	for (const entity of entities) {
+		statements.push(
+			db.prepare(
+				`INSERT INTO entities_current (
+					entity_id, source_id, source_type, external_id, content_hash,
+					canonical_json, first_seen_at, last_observed_at, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+				ON CONFLICT(entity_id) DO UPDATE SET
+					source_id = excluded.source_id,
+					source_type = excluded.source_type,
+					external_id = excluded.external_id,
+					content_hash = excluded.content_hash,
+					canonical_json = excluded.canonical_json,
+					last_observed_at = excluded.last_observed_at,
+					updated_at = unixepoch()`,
 			)
-			.run();
+				.bind(
+					entity.entityId,
+					entity.sourceId,
+					entity.sourceType,
+					entity.externalId ?? null,
+					entity.contentHash,
+					entity.canonicalJson,
+					entity.observedAt,
+					entity.observedAt,
+				),
+			db.prepare(
+				`INSERT INTO entity_observations (
+					observation_id, run_id, entity_id, source_id, content_hash,
+					observed_at, payload_json, created_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+			)
+				.bind(
+					crypto.randomUUID(),
+					runId,
+					entity.entityId,
+					entity.sourceId,
+					entity.contentHash,
+					entity.observedAt,
+					entity.canonicalJson,
+				),
+		);
+	}
+
+	if (typeof db.batch === "function") {
+		await db.batch(statements);
+	} else {
+		// Fallback for environments without batch support (e.g., test mocks)
+		for (const stmt of statements) {
+			await stmt.run();
+		}
 	}
 }
 

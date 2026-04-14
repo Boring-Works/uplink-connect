@@ -689,14 +689,14 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		</div>
 
 		<div class="grid">
-			<div class="card">
+			<div class="card" data-metric="sources">
 				<h3>Total Sources</h3>
 				<div class="metric">${p.totalSources}</div>
 				<div class="metric-sub">
 					<span class="trend-up">${p.activeSources} active</span> · ${p.pausedSources} paused
 				</div>
 			</div>
-			<div class="card">
+			<div class="card" data-metric="runs">
 				<h3>Runs (24h)</h3>
 				<div class="metric">${p.totalRuns24h}</div>
 				<div class="metric-sub">
@@ -705,19 +705,19 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 					</span> vs previous period
 				</div>
 			</div>
-			<div class="card">
+			<div class="card" data-metric="queue">
 				<h3>Queue Lag</h3>
 				<div class="metric">${p.queueLagMin}m</div>
 				<div class="metric-sub">${p.pendingCount} pending · ${p.processingCount} processing</div>
 			</div>
-			<div class="card">
+			<div class="card" data-metric="alerts">
 				<h3>Active Alerts</h3>
 				<div class="metric">${p.activeAlertCount}</div>
 				<div class="metric-sub">
 					<span class="trend-down">${p.criticalAlertCount} critical</span> · ${p.warningAlertCount} warning
 				</div>
 			</div>
-			<div class="card">
+			<div class="card" data-metric="artifacts">
 				<h3>Artifacts</h3>
 				<div class="metric">${p.artifactCount}</div>
 				<div class="metric-sub">Total stored in R2</div>
@@ -828,23 +828,27 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			};
 		}
 
+		function updateMetric(name, value) {
+			const card = document.querySelector('.card[data-metric="' + name + '"]');
+			if (card) {
+				const metric = card.querySelector('.metric');
+				if (metric) metric.textContent = value;
+			}
+		}
+
 		function updateMetrics(data) {
 			if (data.sources && data.sources.total != null) {
-				const cards = document.querySelectorAll('.card .metric');
-				if (cards[0]) cards[0].textContent = data.sources.total;
+				updateMetric('sources', data.sources.total);
 			}
 			if (data.runs24h) {
 				const total = Object.values(data.runs24h).reduce((a, b) => a + b, 0);
-				const cards = document.querySelectorAll('.card .metric');
-				if (cards[1]) cards[1].textContent = total;
+				updateMetric('runs', total);
 			}
 			if (data.queue && data.queue.lagSeconds != null) {
-				const cards = document.querySelectorAll('.card .metric');
-				if (cards[2]) cards[2].textContent = Math.round(data.queue.lagSeconds / 60) + 'm';
+				updateMetric('queue', Math.round(data.queue.lagSeconds / 60) + 'm');
 			}
 			if (data.alerts) {
-				const cards = document.querySelectorAll('.card .metric');
-				if (cards[3]) cards[3].textContent = data.alerts.active || 0;
+				updateMetric('alerts', data.alerts.active || 0);
 			}
 		}
 

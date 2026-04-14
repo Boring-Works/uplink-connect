@@ -89,7 +89,7 @@ async function runSyntheticMonitoring(env: Env): Promise<void> {
 	}
 }
 
-async function triggerScheduledSources(env: Env, cron: string): Promise<void> {
+async function triggerScheduledSources(env: Env, cron: string, ctx?: ExecutionContext): Promise<void> {
 	const byCron = await getEnabledSchedulesByCron(env.CONTROL_DB);
 	const sourceIds = byCron[cron];
 	if (!sourceIds || sourceIds.length === 0) return;
@@ -110,15 +110,18 @@ async function triggerScheduledSources(env: Env, cron: string): Promise<void> {
 				continue;
 			}
 
-			const doUrl = new URL("https://uplink-core.codyboring.workers.dev/collect");
+			const doUrl = new URL("https://source-coordinator/collect");
 			doUrl.searchParams.set("sourceId", sourceId);
 			doUrl.searchParams.set("leaseToken", lease.leaseToken);
 			doUrl.searchParams.set("triggeredBy", "scheduler-cron");
 
-			// Fire-and-forget
-			coordinator.fetch(doUrl.toString(), { method: "POST" }).catch((err) => {
+			// Fire-and-forget with waitUntil if available
+			const doPromise = coordinator.fetch(doUrl.toString(), { method: "POST" }).catch((err) => {
 				console.error(`[scheduler] cron trigger failed for ${sourceId}:`, err);
 			});
+			if (ctx) {
+				ctx.waitUntil(doPromise);
+			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`[scheduler] error triggering ${sourceId}:`, message);
@@ -137,7 +140,7 @@ export default {
 
 	async scheduled(controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
 		await runSyntheticMonitoring(env);
-		await triggerScheduledSources(env, controller.cron);
+		await triggerScheduledSources(env, controller.cron, _ctx);
 	},
 };
 

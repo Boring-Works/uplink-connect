@@ -105,7 +105,15 @@ export class DashboardStreamDO extends DurableObject<Env> {
 	private async broadcastMetrics(): Promise<void> {
 		if (this.clients.size === 0) return;
 
-		const metrics = await this.gatherMetrics();
+		let metrics: Record<string, unknown>;
+		try {
+			metrics = await this.gatherMetrics();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error("[DashboardStreamDO] gatherMetrics failed:", message);
+			metrics = { error: "Failed to gather metrics" };
+		}
+
 		const message = JSON.stringify({ type: "metrics", data: metrics });
 
 		for (const client of this.clients.values()) {
@@ -151,6 +159,12 @@ export class DashboardStreamDO extends DurableObject<Env> {
 			runTotals[r.status] = r.count;
 		}
 
+		// Approximate queue lag from oldest pending run in minutes
+		const oldestPending = await db.prepare(
+			`SELECT MIN(created_at) as oldest FROM ingest_runs WHERE status IN ('received', 'enqueued')`
+		).first<{ oldest: number }>();
+		const lagSeconds = oldestPending?.oldest ? Math.floor(Date.now() / 1000) - oldestPending.oldest : 0;
+
 		return {
 			timestamp: new Date().toISOString(),
 			sources: {
@@ -160,6 +174,7 @@ export class DashboardStreamDO extends DurableObject<Env> {
 			queue: {
 				pending: queueMetrics?.pending ?? 0,
 				processing: queueMetrics?.processing ?? 0,
+				lagSeconds,
 			},
 			alerts: {
 				active: alertCount?.count ?? 0,
