@@ -607,10 +607,11 @@ describe("contracts", () => {
 			expect(SOURCE_TYPES).toContain("email");
 			expect(SOURCE_TYPES).toContain("file");
 			expect(SOURCE_TYPES).toContain("stream");
+			expect(SOURCE_TYPES).toContain("nws");
 		});
 
-		it("has exactly 7 source types", () => {
-			expect(SOURCE_TYPES).toHaveLength(7);
+		it("has exactly 8 source types", () => {
+			expect(SOURCE_TYPES).toHaveLength(8);
 		});
 
 		it("does not contain duplicate source types", () => {

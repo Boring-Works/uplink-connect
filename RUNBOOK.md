@@ -41,8 +41,9 @@ The following public data sources are available for testing and demonstration:
 - **GitHub Public Events** — `github-public-events`
 - **Hacker News Top Stories** — `hackernews-top-stories`
 - **Exchange Rates (USD)** — `exchange-rates-daily`
+- **NWS Tennessee Weather** — `nws-weather-tn`
 
-**Note:** Scheduled auto-triggers are currently disabled to avoid hard-coding. Use manual triggers or configure via the settings API until the scheduler UI is built.
+**Note:** Use manual triggers or configure schedules via `/scheduler`. Auto-triggers are driven by the dynamic scheduler, not hard-coded.
 
 ---
 

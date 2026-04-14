@@ -50,7 +50,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Entity normalization and deduplication
 - ✅ Vectorize semantic search
 - ✅ **AST-based code chunking** - Intelligent chunking of TS/JS files by constructs (function, class, interface, type)
-- ✅ **Live public data sources** - 4 diverse APIs configured and verified (USGS, GitHub, HN, exchange rates)
+- ✅ **Live public data sources** - 5 diverse APIs configured and verified (USGS, GitHub, HN, exchange rates, NWS weather)
 - ✅ **Manual trigger safety** - Hard-coded scheduled triggers removed to prevent unexpected costs
 
 #### Coordination & Reliability
@@ -218,7 +218,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Lines of Code | ~19,655 (TypeScript) |
 | Test Coverage | 554 tests |
 | Migrations | 10 |
-| Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
+| Live Data Sources | 5 (USGS, GitHub, HN, exchange rates, NWS weather) |
 | Last Verified | April 14, 2026 |
 | Documentation | 11 files, ~3,750 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
@@ -275,7 +275,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - [x] Add PagerDuty/Slack alert integrations
 - [x] Apply AST-based chunking from RepoMind patterns
 - [x] Fix all P0 bugs (DO alarms, auth timing, hash length, fetch binding, queue config)
-- [x] Wire up live public data sources (USGS earthquakes, GitHub events, HN stories, exchange rates)
+- [x] Wire up live public data sources (USGS earthquakes, GitHub events, HN stories, exchange rates, NWS weather)
 - [x] Build scheduler settings UI with per-source cron configuration
 - [x] Replace hard-coded scheduled triggers with dynamic D1-driven scheduler
 
@@ -348,6 +348,9 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - **Exchange Rates**: exchangerate-api.com USD base
   - Source ID: `exchange-rates-daily`
   - Proves: Financial data, deeply nested JSON
+- **NWS Tennessee Weather**: National Weather Service API
+  - Source ID: `nws-weather-tn`
+  - Proves: Multi-step API traversal, geospatial data, severity-graded alerts
 - All verified: entities in D1, artifacts in R2, dashboard shows live flow
 - Setup script: `scripts/setup-public-sources.sh`
 - Scheduler settings UI is live at `/scheduler` — per-source cron schedules can be configured dynamically

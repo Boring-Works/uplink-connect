@@ -147,7 +147,7 @@ pnpm dev:ops
 
 ### Live Public Data Sources
 
-Four real public data sources are actively collecting to prove the platform handles diverse APIs:
+Five real public data sources are actively collecting to prove the platform handles diverse APIs:
 
 ```bash
 # Set up all public sources
@@ -160,8 +160,9 @@ Four real public data sources are actively collecting to prove the platform hand
 | **GitHub Public Events** | `api.github.com/events` | High-frequency collection, auth headers |
 | **Hacker News Top Stories** | `firebaseio.com` | Array-based IDs, large nested payloads |
 | **Exchange Rates** | `exchangerate-api.com` | Financial data, nested JSON objects |
+| **NWS Tennessee Weather** | `api.weather.gov` | Multi-step traversal, geospatial alerts |
 
-All sources have verified end-to-end flow: entities in D1, artifacts in R2, metrics in Analytics Engine. Trigger manually via the API or dashboard until the scheduler settings UI is built.
+All sources have verified end-to-end flow: entities in D1, artifacts in R2, metrics in Analytics Engine. Trigger manually via the API or dashboard, or schedule via `/scheduler`.
 
 ### Environment Setup
 

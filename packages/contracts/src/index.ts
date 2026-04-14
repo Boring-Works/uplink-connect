@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SOURCE_TYPES = ["api", "webhook", "email", "file", "browser", "manual", "stream"] as const;
+export const SOURCE_TYPES = ["api", "webhook", "email", "file", "browser", "manual", "stream", "nws"] as const;
 
 export const SourceTypeSchema = z.enum(SOURCE_TYPES);
 

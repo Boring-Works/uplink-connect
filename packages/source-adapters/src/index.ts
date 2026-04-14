@@ -40,6 +40,8 @@ export function createSourceAdapter(type: SourceType): SourceAdapter {
 			return new BrowserSourceAdapter();
 		case "webhook":
 			return new WebhookSourceAdapter();
+		case "nws":
+			return new NWSSourceAdapter();
 		default:
 			return new GenericSourceAdapter(type);
 	}
@@ -70,6 +72,198 @@ export class ApiSourceAdapter implements SourceAdapter {
 		const json = await response.json();
 		const rows = Array.isArray(json) ? json : [json];
 		const records = rows.map((row, index) => toRecord(row, context.nowIso(), `${parsed.sourceId}:${index}`));
+
+		return {
+			records,
+			hasMore: false,
+			nextCursor: undefined,
+		};
+	}
+}
+
+interface NWSLocation {
+	name: string;
+	lat: number;
+	lon: number;
+}
+
+interface NWSGridPoint {
+	properties: {
+		gridId: string;
+		gridX: number;
+		gridY: number;
+	};
+}
+
+interface NWSStations {
+	features: Array<{
+		properties: {
+			stationIdentifier: string;
+		};
+	}>;
+}
+
+interface NWSObservation {
+	properties: {
+		temperature: { value: number | null };
+		relativeHumidity: { value: number | null };
+		windSpeed: { value: number | null };
+		windDirection: { value: number | null };
+		textDescription: string;
+		icon: string;
+		timestamp: string;
+	};
+}
+
+interface NWSAlert {
+	id: string;
+	properties: {
+		event: string;
+		severity: string;
+		headline: string;
+		description: string;
+		effective: string;
+		expires: string;
+		geocode: { SAME: string[] };
+	};
+}
+
+interface NWSAlertsResponse {
+	features: NWSAlert[];
+}
+
+async function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function celsiusToFahrenheit(c: number | null): number | null {
+	if (c === null) return null;
+	return (c * 9) / 5 + 32;
+}
+
+function metersPerSecToMph(mps: number | null): number | null {
+	if (mps === null) return null;
+	return mps * 2.237;
+}
+
+function degreesToDirection(degrees: number | null): string {
+	if (degrees === null) return "Unknown";
+	const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+	const index = Math.round(degrees / 45) % 8;
+	return directions[index];
+}
+
+export class NWSSourceAdapter implements SourceAdapter {
+	type: SourceType = "nws";
+
+	async collect(config: SourceRuntimeConfig, context: AdapterContext): Promise<AdapterResult> {
+		const parsed = SourceRuntimeConfigSchema.parse(config);
+		const locations = (parsed.metadata.locations as NWSLocation[] | undefined) ?? [];
+		const stateCode = (parsed.metadata.stateCode as string | undefined) ?? "TN";
+		const delayMs = (parsed.metadata.delayMs as number | undefined) ?? 200;
+		const records: IngestRecord[] = [];
+
+		const headers = {
+			"User-Agent": "uplink-connect/1.0",
+			accept: "application/geo+json",
+			...parsed.requestHeaders,
+		};
+
+		// Collect weather observations for each location
+		for (const location of locations) {
+			try {
+				// Step 1: Resolve lat/lon to grid point
+				const pointsRes = await context.fetchFn(
+					`https://api.weather.gov/points/${location.lat},${location.lon}`,
+					{ headers },
+				);
+				if (!pointsRes.ok) {
+					console.warn(`NWS points failed for ${location.name}: ${pointsRes.status}`);
+					continue;
+				}
+				const pointsData = (await pointsRes.json()) as NWSGridPoint;
+				const { gridId, gridX, gridY } = pointsData.properties;
+
+				// Step 2: Get nearest observation station
+				const stationsRes = await context.fetchFn(
+					`https://api.weather.gov/gridpoints/${gridId}/${gridX},${gridY}/stations`,
+					{ headers },
+				);
+				if (!stationsRes.ok) {
+					console.warn(`NWS stations failed for ${location.name}: ${stationsRes.status}`);
+					continue;
+				}
+				const stationsData = (await stationsRes.json()) as NWSStations;
+				const stationId = stationsData.features[0]?.properties?.stationIdentifier;
+				if (!stationId) {
+					console.warn(`No station found for ${location.name}`);
+					continue;
+				}
+
+				// Step 3: Get latest observation
+				const obsRes = await context.fetchFn(
+					`https://api.weather.gov/stations/${stationId}/observations/latest`,
+					{ headers },
+				);
+				if (!obsRes.ok) {
+					console.warn(`NWS observation failed for ${location.name}: ${obsRes.status}`);
+					continue;
+				}
+				const obsData = (await obsRes.json()) as NWSObservation;
+				const props = obsData.properties;
+
+				const record = toRecord(
+					{
+						location: location.name,
+						stationId,
+						temperature: celsiusToFahrenheit(props.temperature?.value ?? null),
+						humidity: props.relativeHumidity?.value ?? null,
+						windSpeed: metersPerSecToMph(props.windSpeed?.value ?? null),
+						windDirection: degreesToDirection(props.windDirection?.value ?? null),
+						conditions: props.textDescription || "Unknown",
+						iconUrl: props.icon || null,
+						observedAt: props.timestamp,
+					},
+					context.nowIso(),
+					`${parsed.sourceId}:weather:${stationId}:${props.timestamp ?? context.nowIso()}`,
+				);
+				records.push(record);
+			} catch (error) {
+				console.warn(`NWS collect error for ${location.name}:`, error);
+			}
+
+			await sleep(delayMs);
+		}
+
+		// Step 4: Fetch state-wide alerts
+		try {
+			const alertsRes = await context.fetchFn(
+				`https://api.weather.gov/alerts/active?area=${stateCode}`,
+				{ headers },
+			);
+			if (alertsRes.ok) {
+				const alertsData = (await alertsRes.json()) as NWSAlertsResponse;
+				for (const alert of alertsData.features || []) {
+					const record = toRecord(
+						{
+							alertId: alert.id,
+							event: alert.properties.event,
+							severity: alert.properties.severity,
+							headline: alert.properties.headline,
+							description: alert.properties.description,
+							effective: alert.properties.effective,
+							expires: alert.properties.expires,
+							geocode: alert.properties.geocode?.SAME || [],
+						},
+						context.nowIso(),
+						`${parsed.sourceId}:alert:${alert.id}`,
+					);
+					records.push(record);
+				}
+			}
+		} catch (error) {
+			console.warn("NWS alerts fetch error:", error);
+		}
 
 		return {
 			records,

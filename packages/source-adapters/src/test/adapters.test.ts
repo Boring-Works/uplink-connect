@@ -5,6 +5,7 @@ import {
 	BrowserSourceAdapter,
 	WebhookSourceAdapter,
 	GenericSourceAdapter,
+	NWSSourceAdapter,
 } from "../index";
 
 describe("createSourceAdapter", () => {
@@ -48,6 +49,12 @@ describe("createSourceAdapter", () => {
 		const adapter = createSourceAdapter("stream");
 		expect(adapter).toBeInstanceOf(GenericSourceAdapter);
 		expect(adapter.type).toBe("stream");
+	});
+
+	it("creates nws adapter", () => {
+		const adapter = createSourceAdapter("nws");
+		expect(adapter).toBeInstanceOf(NWSSourceAdapter);
+		expect(adapter.type).toBe("nws");
 	});
 });
 
@@ -536,6 +543,179 @@ describe("GenericSourceAdapter", () => {
 		);
 
 		expect(result.hasMore).toBe(false);
+	});
+});
+
+describe("NWSSourceAdapter", () => {
+	it("collects weather observations and alerts", async () => {
+		const adapter = new NWSSourceAdapter();
+		const mockFetch = vi.fn();
+
+		// Point resolution
+		mockFetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					properties: { gridId: "OHX", gridX: 52, gridY: 60 },
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } }
+			)
+		);
+
+		// Stations
+		mockFetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					features: [{ properties: { stationIdentifier: "KBNA" } }],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } }
+			)
+		);
+
+		// Observation
+		mockFetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					properties: {
+						temperature: { value: 15.5 },
+						relativeHumidity: { value: 65 },
+						windSpeed: { value: 5.2 },
+						windDirection: { value: 180 },
+						textDescription: "Partly Cloudy",
+						icon: "https://api.weather.gov/icons/land/day/sct",
+						timestamp: "2026-04-14T12:00:00Z",
+					},
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } }
+			)
+		);
+
+		// Alerts
+		mockFetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					features: [
+						{
+							id: "alert-1",
+							properties: {
+								event: "Tornado Warning",
+								severity: "Extreme",
+								headline: "Tornado Warning in effect",
+								description: "Take shelter now",
+								effective: "2026-04-14T11:00:00Z",
+								expires: "2026-04-14T13:00:00Z",
+								geocode: { SAME: ["047037"] },
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } }
+			)
+		);
+
+		const result = await adapter.collect(
+			{
+				sourceId: "nws-weather-tn",
+				sourceName: "NWS Tennessee Weather",
+				sourceType: "nws",
+				requestMethod: "GET",
+				requestHeaders: {},
+				metadata: {
+					locations: [{ name: "Nashville", lat: 36.1627, lon: -86.7816 }],
+					stateCode: "TN",
+					delayMs: 0,
+				},
+			},
+			{ fetchFn: mockFetch, nowIso: () => "2026-04-14T12:00:00Z" }
+		);
+
+		expect(result.records).toHaveLength(2);
+		expect(result.records[0].rawPayload).toMatchObject({
+			location: "Nashville",
+			stationId: "KBNA",
+			temperature: 59.9, // 15.5C -> F
+			conditions: "Partly Cloudy",
+		});
+		expect(result.records[1].rawPayload).toMatchObject({
+			event: "Tornado Warning",
+			severity: "Extreme",
+		});
+		expect(result.hasMore).toBe(false);
+	});
+
+	it("returns empty records when no locations configured", async () => {
+		const adapter = new NWSSourceAdapter();
+		const mockFetch = vi.fn();
+
+		mockFetch.mockResolvedValueOnce(
+			new Response(JSON.stringify({ features: [] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			})
+		);
+
+		const result = await adapter.collect(
+			{
+				sourceId: "nws-weather-tn",
+				sourceName: "NWS Tennessee Weather",
+				sourceType: "nws",
+				requestMethod: "GET",
+				requestHeaders: {},
+				metadata: {},
+			},
+			{ fetchFn: mockFetch, nowIso: () => "2026-04-14T12:00:00Z" }
+		);
+
+		expect(result.records).toHaveLength(0);
+	});
+
+	it("continues on point resolution failure", async () => {
+		const adapter = new NWSSourceAdapter();
+		const mockFetch = vi.fn();
+
+		mockFetch.mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
+
+		mockFetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					features: [
+						{
+							id: "alert-1",
+							properties: {
+								event: "Severe Thunderstorm Warning",
+								severity: "Severe",
+								headline: "Severe Thunderstorm Warning",
+								description: "Damaging winds expected",
+								effective: "2026-04-14T11:00:00Z",
+								expires: "2026-04-14T13:00:00Z",
+								geocode: { SAME: [] },
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } }
+			)
+		);
+
+		const result = await adapter.collect(
+			{
+				sourceId: "nws-weather-tn",
+				sourceName: "NWS Tennessee Weather",
+				sourceType: "nws",
+				requestMethod: "GET",
+				requestHeaders: {},
+				metadata: {
+					locations: [{ name: "BadLocation", lat: 0, lon: 0 }],
+					stateCode: "TN",
+					delayMs: 0,
+				},
+			},
+			{ fetchFn: mockFetch, nowIso: () => "2026-04-14T12:00:00Z" }
+		);
+
+		expect(result.records).toHaveLength(1);
+		expect(result.records[0].rawPayload).toMatchObject({
+			event: "Severe Thunderstorm Warning",
+		});
 	});
 });
 

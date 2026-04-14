@@ -105,10 +105,42 @@ curl -s -X POST "$CORE_URL/internal/sources" \
     }
   }' | jq .
 
+# 5. NWS Tennessee Weather (hourly)
+echo "Creating NWS Tennessee Weather source..."
+curl -s -X POST "$CORE_URL/internal/sources" \
+  -H "Content-Type: application/json" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  -d '{
+    "sourceId": "nws-weather-tn",
+    "name": "NWS Tennessee Weather",
+    "type": "nws",
+    "adapterType": "nws",
+    "requestMethod": "GET",
+    "requestHeaders": {
+      "Accept": "application/geo+json"
+    },
+    "policy": {
+      "minIntervalSeconds": 3600,
+      "leaseTtlSeconds": 600,
+      "maxRecordsPerRun": 200,
+      "retryLimit": 3,
+      "timeoutSeconds": 180
+    },
+    "metadata": {
+      "stateCode": "TN",
+      "delayMs": 200,
+      "locations": [
+        {"name":"Sullivan","lat":36.5122,"lon":-82.3047},
+        {"name":"Carter","lat":36.2917,"lon":-82.1264},
+        {"name":"Washington","lat":36.2933,"lon":-82.4972}
+      ]
+    }
+  }' | jq .
+
 echo ""
 echo "Triggering initial collections..."
 
-for source in usgs-earthquakes-hourly github-public-events exchange-rates-daily hackernews-top-stories; do
+for source in usgs-earthquakes-hourly github-public-events exchange-rates-daily hackernews-top-stories nws-weather-tn; do
   echo "Triggering $source..."
   curl -s -X POST "$CORE_URL/internal/sources/$source/trigger" \
     -H "Content-Type: application/json" \
