@@ -81,7 +81,7 @@ describe("uplink-browser additional", () => {
 
 		it("accepts HTTPS URL", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
 			);
 			const res = await app.fetch(
@@ -97,7 +97,7 @@ describe("uplink-browser additional", () => {
 
 		it("accepts HTTP URL", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
 			);
 			const res = await app.fetch(
@@ -115,7 +115,7 @@ describe("uplink-browser additional", () => {
 	describe("collect response", () => {
 		it("returns hasMore false for single page", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(
@@ -126,13 +126,13 @@ describe("uplink-browser additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { hasMore: boolean };
 			expect(body.hasMore).toBe(false);
 		});
 
 		it("returns records array with one item", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(
@@ -143,13 +143,13 @@ describe("uplink-browser additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { records: unknown[] };
 			expect(body.records).toHaveLength(1);
 		});
 
 		it("includes sourceId in record", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(
@@ -160,13 +160,13 @@ describe("uplink-browser additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ sourceId: string }> };
 			expect(body.records[0].sourceId).toBe("src-1");
 		});
 
 		it("includes contentType in record", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(
@@ -177,13 +177,13 @@ describe("uplink-browser additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ contentType: string }> };
 			expect(body.records[0].contentType).toBe("text/html");
 		});
 
 		it("includes status in record", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(
@@ -194,13 +194,13 @@ describe("uplink-browser additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ status: number }> };
 			expect(body.records[0].status).toBe(200);
 		});
 
 		it("returns 500 when fetch throws", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockRejectedValue(new Error("network failure"));
+			globalThis.fetch = vi.fn().mockRejectedValue(new Error("network failure"));
 			const res = await app.fetch(
 				new Request("http://localhost/internal/collect", {
 					method: "POST",
@@ -214,7 +214,7 @@ describe("uplink-browser additional", () => {
 
 		it("returns 500 when BROWSER_API_KEY missing", async () => {
 			const env = createEnv();
-			env.BROWSER_API_KEY = undefined;
+			(env as unknown as { BROWSER_API_KEY: string | undefined }).BROWSER_API_KEY = undefined;
 			const res = await app.fetch(
 				new Request("http://localhost/internal/collect", {
 					method: "POST",
@@ -230,7 +230,7 @@ describe("uplink-browser additional", () => {
 	describe("collect payload variations", () => {
 		it("accepts payload with selector", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(
@@ -246,7 +246,7 @@ describe("uplink-browser additional", () => {
 
 		it("accepts payload with headers", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html" } }),
 			);
 			const res = await app.fetch(

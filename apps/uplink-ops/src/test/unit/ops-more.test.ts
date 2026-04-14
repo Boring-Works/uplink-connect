@@ -156,7 +156,7 @@ describe("uplink-ops additional", () => {
 	describe("missing env", () => {
 		it("returns 500 when OPS_API_KEY is missing", async () => {
 			const env = createEnv();
-			env.OPS_API_KEY = undefined;
+			(env as unknown as { OPS_API_KEY: string | undefined }).OPS_API_KEY = undefined;
 			const res = await app.fetch(
 				new Request("http://localhost/v1/runs", {
 					headers: { authorization: "Bearer ops-key" },

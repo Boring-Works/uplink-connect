@@ -385,10 +385,10 @@ function diffObjects(
 	return changes;
 }
 
-function safeJsonParse(json: string | null, fallback: unknown): unknown {
+function safeJsonParse<T>(json: string | null, fallback: T): T {
 	if (!json) return fallback;
 	try {
-		return JSON.parse(json);
+		return JSON.parse(json) as T;
 	} catch {
 		return fallback;
 	}

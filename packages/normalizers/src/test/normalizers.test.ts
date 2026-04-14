@@ -10,6 +10,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "record-1",
@@ -37,6 +38,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "record-1",
@@ -71,6 +73,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -91,6 +94,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "myhash123",
@@ -112,6 +116,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "samehash",
@@ -137,6 +142,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -158,6 +164,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -179,6 +186,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -200,6 +208,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -221,6 +230,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -242,6 +252,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					contentHash: "hash1",
@@ -263,6 +274,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "record-1",
@@ -285,11 +297,12 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [],
 		};
 
-		// @ts-expect-error testing invalid input
-		const entities = normalizeEnvelope(envelope);
+		// Empty records test - runtime validation catches this
+		const entities = normalizeEnvelope(envelope as unknown as Parameters<typeof normalizeEnvelope>[0]);
 		expect(entities).toEqual([]);
 	});
 
@@ -301,6 +314,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "webhook" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "record-1",
@@ -322,6 +336,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{ externalId: "a", contentHash: "h1", rawPayload: {} },
 				{ externalId: "b", contentHash: "h2", rawPayload: {} },
@@ -343,6 +358,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "deep",
@@ -365,6 +381,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "meta",
@@ -387,6 +404,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{
 					externalId: "empty",
@@ -409,6 +427,7 @@ describe("normalizeEnvelope", () => {
 			sourceName: "Test Source",
 			sourceType: "api" as const,
 			collectedAt: "2026-04-13T10:00:00Z",
+			hasMore: false,
 			records: [
 				{ externalId: "ext-1", contentHash: "hash1", rawPayload: {} },
 				{ contentHash: "hash2", rawPayload: {} },

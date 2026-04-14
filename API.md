@@ -875,6 +875,265 @@ curl -X POST http://localhost:8789/v1/runs/run-123/replay \
 
 ---
 
+### GET /internal/dashboard/v2
+
+Enhanced dashboard with trends, pipeline topology, and component health.
+
+**Query Parameters:**
+- `window` - Time window in seconds (default: 86400 = 24h)
+
+**Response:**
+```json
+{
+  "timestamp": "2026-04-13T12:00:00Z",
+  "windowSeconds": 86400,
+  "summary": {
+    "sources": { "total": 5, "active": 3, "paused": 2, "degraded": 0 },
+    "runs": {
+      "current": { "normalized": 100, "failed": 5 },
+      "trend": { "percentage": 15, "direction": "up" }
+    },
+    "alerts": { "active": 2, "critical": 0, "warning": 2 }
+  },
+  "pipeline": {
+    "stages": [...],
+    "connections": [...],
+    "overallHealth": "healthy"
+  },
+  "components": [...],
+  "system": {...},
+  "queue": {...},
+  "entities": {...},
+  "activeAlerts": [...]
+}
+```
+
+---
+
+### GET /dashboard
+
+Self-hosted HTML dashboard with auto-refresh.
+
+**Response:** HTML page with visual pipeline, metrics, and component health.
+
+---
+
+### GET /internal/health/components
+
+Get health status of all system components.
+
+**Response:**
+```json
+{
+  "components": [
+    {
+      "id": "uplink-core",
+      "name": "Uplink Core",
+      "type": "worker",
+      "status": "healthy",
+      "lastCheckedAt": "2026-04-13T12:00:00Z",
+      "latencyMs": 50
+    }
+  ],
+  "timestamp": "2026-04-13T12:00:00Z"
+}
+```
+
+---
+
+### GET /internal/health/topology
+
+Get the pipeline topology with current health and flow rates.
+
+**Response:**
+```json
+{
+  "stages": [
+    {
+      "id": "intake",
+      "name": "Data Intake",
+      "componentId": "uplink-edge",
+      "status": "healthy",
+      "inputRate": 120,
+      "outputRate": 120,
+      "latencyMs": 50
+    }
+  ],
+  "connections": [...],
+  "overallHealth": "healthy",
+  "lastUpdated": "2026-04-13T12:00:00Z"
+}
+```
+
+---
+
+### GET /internal/health/flow
+
+Get data flow metrics over time.
+
+**Query Parameters:**
+- `window` - Time window in seconds (default: 3600)
+
+**Response:**
+```json
+{
+  "timestamp": "2026-04-13T12:00:00Z",
+  "windowSeconds": 3600,
+  "flows": [
+    {
+      "path": ["intake", "queue", "processing"],
+      "recordsPerSecond": 2.5,
+      "bytesPerSecond": 2560,
+      "errorRate": 0.01,
+      "latencyMs": 150
+    }
+  ]
+}
+```
+
+---
+
+### GET /internal/sources/:sourceId/health/timeline
+
+Get time-series health data for a source.
+
+**Query Parameters:**
+- `window` - Time window in seconds (default: 3600)
+
+**Response:**
+```json
+{
+  "sourceId": "my-source",
+  "intervals": [
+    {
+      "timestamp": "2026-04-13T11:00:00Z",
+      "totalRuns": 10,
+      "successCount": 9,
+      "failureCount": 1,
+      "successRate": 0.9,
+      "avgLatencyMs": 120
+    }
+  ]
+}
+```
+
+---
+
+### GET /internal/runs/:runId/trace
+
+Get full trace for a run including children, errors, and artifacts.
+
+**Response:**
+```json
+{
+  "runId": "run-123",
+  "sourceId": "my-source",
+  "status": "normalized",
+  "children": [...],
+  "errors": [...],
+  "artifacts": [...]
+}
+```
+
+---
+
+### GET /internal/entities/:entityId/lineage
+
+Get complete entity history with change diffs and relationships.
+
+**Response:**
+```json
+{
+  "entityId": "ent-123",
+  "sourceId": "my-source",
+  "contentHash": "abc123",
+  "currentState": {...},
+  "history": [
+    {
+      "eventType": "created",
+      "runId": "run-123",
+      "observedAt": "2026-04-13T12:00:00Z",
+      "changes": [...]
+    }
+  ],
+  "relationships": [...]
+}
+```
+
+---
+
+### GET /internal/sources/:sourceId/runs/tree
+
+Get visual hierarchy of runs and their replays.
+
+**Response:**
+```json
+{
+  "sourceId": "my-source",
+  "tree": [
+    {
+      "runId": "run-123",
+      "status": "normalized",
+      "children": [
+        { "runId": "replay:run-123:uuid", "status": "normalized" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### GET /internal/settings
+
+Get platform settings.
+
+**Response:**
+```json
+{
+  "defaultSourcePolicy": {...},
+  "alertDefaults": {...},
+  "retention": {...},
+  "platform": {...},
+  "features": {...},
+  "updatedAt": "2026-04-13T12:00:00Z"
+}
+```
+
+---
+
+### PUT /internal/settings
+
+Update platform settings.
+
+**Request Body:** Partial settings object
+
+**Response:** Updated settings
+
+---
+
+### GET /internal/audit-log
+
+Get audit trail of operator actions.
+
+**Query Parameters:**
+- `limit` - Max results (default: 50)
+- `offset` - Pagination offset
+- `resourceType` - Filter by resource type
+- `actor` - Filter by actor
+- `fromDate` - Start date
+- `toDate` - End date
+
+**Response:**
+```json
+{
+  "items": [...],
+  "total": 100
+}
+```
+
+---
+
 ## Authentication Summary
 
 | Service | Endpoint Pattern | Auth Method | Key Location |

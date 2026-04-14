@@ -123,7 +123,7 @@ describe("uplink-edge additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { receivedAt: string };
 			expect(body.receivedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
 	});
@@ -140,7 +140,7 @@ describe("uplink-edge additional", () => {
 
 		it("returns 500 when INGEST_API_KEY missing", async () => {
 			const env = createEnv();
-			env.INGEST_API_KEY = undefined;
+			(env as unknown as { INGEST_API_KEY: string | undefined }).INGEST_API_KEY = undefined;
 			const res = await app.fetch(
 				new Request("http://localhost/v1/sources/src-1/trigger", {
 					method: "POST",
@@ -178,7 +178,7 @@ describe("uplink-edge additional", () => {
 				}),
 				env,
 			);
-			const body = await res.json();
+			const body = await res.json() as { workflowInstanceId: string };
 			expect(body.workflowInstanceId).toBeDefined();
 		});
 	});

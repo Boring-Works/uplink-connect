@@ -2,9 +2,12 @@
 
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
-[![Tests](https://img.shields.io/badge/tests-35%20passing-success)](./apps/uplink-core/src/test/integration)
+[![Tests](https://img.shields.io/badge/tests-500%2B%20passing-success)](./apps/uplink-core/src/test)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+**Live Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
 
 ## Overview
 
@@ -16,7 +19,9 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Durable execution**: Workflows with automatic retries, leases, and cursor management
 - **Idempotent processing**: Deterministic ingest IDs prevent duplicate data
 - **Real-time observability**: Analytics Engine metrics, health checks, and alerting
+- **Visual dashboard**: Self-hosted HTML dashboard with live pipeline flow and component health
 - **Entity resolution**: Automatic deduplication and relationship linking
+- **Data lineage**: Full traceability from raw ingest to normalized entity
 - **Protected operations**: Secure ops API for run management and replay
 
 ## Architecture
@@ -262,6 +267,18 @@ pnpm test:watch
 
 ### Test Coverage
 
+**500+ tests** across unit, integration, e2e, and live test suites.
+
+| Category | Count | Coverage Area |
+|----------|-------|---------------|
+| **Unit tests** | 261 | lib modules (retry, logging, db, metrics, vectorize, pipelines, auth, alerting, coordinator-client) |
+| **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert |
+| **E2E tests** | 6 | Health, dashboard, source registration, ingest/query, replay, browser status |
+| **Worker tests** | 101 | edge (37), ops (32), browser (32) |
+| **Package tests** | 97 | contracts (49), normalizers (19), source-adapters (29) |
+| **Live tests** | 18 | Production endpoint validation |
+
+#### Integration Test Files
 | Test File | Tests | Coverage Area |
 |-----------|-------|---------------|
 | `source-coordinator.test.ts` | 14 | Lease management, cursor advancement, failure tracking |

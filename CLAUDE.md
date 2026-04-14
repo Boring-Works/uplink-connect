@@ -52,7 +52,7 @@ uplink-ops       → Protected operations API
 - ✅ Protected ops API for run management
 - ✅ Run replay capability
 - ✅ Retention workflows
-- ✅ 35 integration tests passing
+- ✅ 500+ tests passing (261 unit + 35 integration + 6 e2e + 18 live)
 
 ### API Surface
 
@@ -89,7 +89,7 @@ UplinkConnect/
 │   │   │   ├── workflows/
 │   │   │   │   ├── collection-workflow.ts # Main collection workflow
 │   │   │   │   └── retention-workflow.ts  # Cleanup workflow
-│   │   │   └── test/integration/     # 35 integration tests
+│   │   │   └── test/                 # 500+ tests (unit, integration, e2e, live)
 │   │   ├── migrations/       # 6 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
 │   │   └── package.json      # @uplink/core

@@ -17,14 +17,14 @@ describe("uplink-edge unit", () => {
 		it("returns service name", async () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
-			const body = await res.json();
+			const body = await res.json() as { service: string };
 			expect(body.service).toBe("uplink-edge");
 		});
 
 		it("returns current timestamp", async () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
-			const body = await res.json();
+			const body = await res.json() as { now: string };
 			expect(body.now).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
 	});

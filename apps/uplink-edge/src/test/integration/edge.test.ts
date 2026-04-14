@@ -18,7 +18,7 @@ describe("uplink-edge integration", () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = await res.json() as { ok: boolean; service: string };
 			expect(body.ok).toBe(true);
 			expect(body.service).toBe("uplink-edge");
 		});
@@ -36,7 +36,7 @@ describe("uplink-edge integration", () => {
 
 		it("returns 500 when INGEST_API_KEY not configured", async () => {
 			const env = createEnv();
-			env.INGEST_API_KEY = undefined;
+			(env as unknown as { INGEST_API_KEY: string | undefined }).INGEST_API_KEY = undefined;
 			const res = await app.fetch(
 				new Request("http://localhost/v1/intake", {
 					method: "POST",
@@ -93,7 +93,7 @@ describe("uplink-edge integration", () => {
 				env,
 			);
 			expect(res.status).toBe(202);
-			const body = await res.json();
+			const body = await res.json() as { ok: boolean; ingestId: string };
 			expect(body.ok).toBe(true);
 			expect(body.ingestId).toBe("run-12345");
 			expect(env.INGEST_QUEUE.send).toHaveBeenCalled();
@@ -115,7 +115,7 @@ describe("uplink-edge integration", () => {
 				env,
 			);
 			expect(res.status).toBe(202);
-			const body = await res.json();
+			const body = await res.json() as { recordCount: number; ingestId: string };
 			expect(body.recordCount).toBe(1);
 			expect(body.ingestId).toMatch(/^[0-9a-f-]{36}$/);
 		});

@@ -15,7 +15,7 @@ describe("uplink-ops integration", () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = await res.json() as { ok: boolean; service: string };
 			expect(body.ok).toBe(true);
 			expect(body.service).toBe("uplink-ops");
 		});
@@ -24,7 +24,7 @@ describe("uplink-ops integration", () => {
 	describe("auth middleware", () => {
 		it("returns 500 when OPS_API_KEY not configured", async () => {
 			const env = createEnv();
-			env.OPS_API_KEY = undefined;
+			(env as unknown as { OPS_API_KEY: string | undefined }).OPS_API_KEY = undefined;
 			const res = await app.fetch(new Request("http://localhost/v1/runs"), env);
 			expect(res.status).toBe(500);
 		});

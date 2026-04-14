@@ -14,14 +14,14 @@ describe("uplink-browser unit", () => {
 		it("returns service name", async () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
-			const body = await res.json();
+			const body = await res.json() as { service: string };
 			expect(body.service).toBe("uplink-browser");
 		});
 
 		it("returns current timestamp", async () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
-			const body = await res.json();
+			const body = await res.json() as { now: string };
 			expect(body.now).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
 	});
@@ -73,7 +73,7 @@ describe("uplink-browser unit", () => {
 			const fetchSpy = vi.fn().mockResolvedValue(
 				new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
 			);
-			global.fetch = fetchSpy;
+			globalThis.fetch = fetchSpy;
 
 			await app.fetch(
 				new Request("http://localhost/internal/collect", {
@@ -97,7 +97,7 @@ describe("uplink-browser unit", () => {
 			const fetchSpy = vi.fn().mockResolvedValue(
 				new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
 			);
-			global.fetch = fetchSpy;
+			globalThis.fetch = fetchSpy;
 
 			await app.fetch(
 				new Request("http://localhost/internal/collect", {
@@ -118,7 +118,7 @@ describe("uplink-browser unit", () => {
 
 		it("returns contentType in response", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("html", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }),
 			);
 
@@ -131,13 +131,13 @@ describe("uplink-browser unit", () => {
 				env,
 			);
 
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ contentType: string }> };
 			expect(body.records[0].contentType).toBe("text/html; charset=utf-8");
 		});
 
 		it("returns fetchedAt timestamp", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
 			);
 
@@ -150,7 +150,7 @@ describe("uplink-browser unit", () => {
 				env,
 			);
 
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ fetchedAt: string }> };
 			expect(body.records[0].fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
 	});

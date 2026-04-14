@@ -11,7 +11,7 @@ describe("uplink-browser integration", () => {
 			const env = createEnv();
 			const res = await app.fetch(new Request("http://localhost/health"), env);
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = await res.json() as { ok: boolean; service: string };
 			expect(body.ok).toBe(true);
 			expect(body.service).toBe("uplink-browser");
 		});
@@ -29,7 +29,7 @@ describe("uplink-browser integration", () => {
 
 		it("returns 500 when BROWSER_API_KEY not configured", async () => {
 			const env = createEnv();
-			env.BROWSER_API_KEY = undefined;
+			(env as unknown as { BROWSER_API_KEY: string | undefined }).BROWSER_API_KEY = undefined;
 			const res = await app.fetch(
 				new Request("http://localhost/internal/collect", {
 					method: "POST",
@@ -55,7 +55,7 @@ describe("uplink-browser integration", () => {
 
 		it("fetches URL and returns record", async () => {
 			const env = createEnv();
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response("<html>Hello</html>", {
 					status: 200,
 					headers: { "content-type": "text/html" },
@@ -72,7 +72,7 @@ describe("uplink-browser integration", () => {
 			);
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ url: string; status: number }>; hasMore: boolean };
 			expect(body.records).toHaveLength(1);
 			expect(body.records[0].url).toBe("https://example.com");
 			expect(body.records[0].status).toBe(200);
@@ -84,7 +84,7 @@ describe("uplink-browser integration", () => {
 			const fetchSpy = vi.fn().mockResolvedValue(
 				new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
 			);
-			global.fetch = fetchSpy;
+			globalThis.fetch = fetchSpy;
 
 			await app.fetch(
 				new Request("http://localhost/internal/collect", {
@@ -108,7 +108,7 @@ describe("uplink-browser integration", () => {
 		it("truncates response body over 250KB", async () => {
 			const env = createEnv();
 			const hugeBody = "x".repeat(300_000);
-			global.fetch = vi.fn().mockResolvedValue(
+			globalThis.fetch = vi.fn().mockResolvedValue(
 				new Response(hugeBody, { status: 200, headers: { "content-type": "text/html" } }),
 			);
 
@@ -121,7 +121,7 @@ describe("uplink-browser integration", () => {
 				env,
 			);
 
-			const body = await res.json();
+			const body = await res.json() as { records: Array<{ body: string }> };
 			expect(body.records[0].body.length).toBe(250_000);
 		});
 	});

@@ -118,6 +118,7 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 		sourceName: sourceId,
 		sourceType: "webhook" as const,
 		collectedAt: toIsoNow(),
+		hasMore: false,
 		records: [{
 			contentHash: await computeContentHash(bodyText),
 			rawPayload: payload,
