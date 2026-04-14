@@ -1,13 +1,15 @@
 import type { Env } from "../types";
+import { sanitizeObject } from "@uplink/contracts";
 
 /**
  * Structured Logging with OpenTelemetry-style spans
- * 
+ *
  * For a daily-use production tool, you need:
  * - Request tracing across workers
  * - Performance timing
  * - Contextual fields for debugging
  * - Log levels that mean something
+ * - Automatic secret redaction in logged context
  */
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
@@ -105,10 +107,10 @@ export class Logger {
 			level,
 			message,
 			service: this.service,
-			context: {
+			context: sanitizeObject({
 				...this.defaultContext,
 				...context,
-			},
+			}),
 			metrics,
 		};
 

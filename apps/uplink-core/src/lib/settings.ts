@@ -1,3 +1,4 @@
+import { safeJsonStringify } from "@uplink/contracts";
 import type { Env } from "../types";
 
 export interface PlatformSettings {
@@ -152,7 +153,7 @@ export async function saveSettings(
 			updated_at = excluded.updated_at,
 			updated_by = excluded.updated_by`,
 	)
-		.bind(SETTINGS_KEY, JSON.stringify(merged), updatedBy ?? null)
+		.bind(SETTINGS_KEY, safeJsonStringify(merged), updatedBy ?? null)
 		.run();
 
 	return merged;
@@ -182,7 +183,7 @@ export async function logAuditEvent(
 			event.actor ?? null,
 			event.resourceType,
 			event.resourceId ?? null,
-			event.details ? JSON.stringify(event.details) : null,
+			event.details ? safeJsonStringify(event.details) : null,
 		)
 		.run();
 }

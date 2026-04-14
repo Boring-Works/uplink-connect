@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import { safeJsonStringify } from "@uplink/contracts";
 
 export interface RunTrace {
 	runId: string;
@@ -377,7 +378,7 @@ function diffObjects(
 	for (const key of allKeys) {
 		const oldValue = previous[key];
 		const newValue = current[key];
-		if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+		if (safeJsonStringify(oldValue) !== safeJsonStringify(newValue)) {
 			changes.push({ field: key, oldValue, newValue });
 		}
 	}

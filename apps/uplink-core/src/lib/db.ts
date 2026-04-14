@@ -1,6 +1,7 @@
 import {
 	SourceConfigSchema,
 	SourcePolicySchema,
+	safeJsonStringify,
 	type IngestEnvelope,
 	type SourceConfig,
 	type SourcePolicy,
@@ -43,10 +44,10 @@ export async function upsertSourceConfig(db: D1Database, source: SourceConfig): 
 			parsed.adapterType,
 			parsed.endpointUrl ?? null,
 			parsed.requestMethod,
-			JSON.stringify(parsed.requestHeaders),
-			parsed.requestBody ?? null,
-			JSON.stringify(parsed.metadata),
-			parsed.webhookSecurity ? JSON.stringify(parsed.webhookSecurity) : null,
+		safeJsonStringify(parsed.requestHeaders),
+		parsed.requestBody ?? null,
+		safeJsonStringify(parsed.metadata),
+		parsed.webhookSecurity ? safeJsonStringify(parsed.webhookSecurity) : null,
 			null,
 		)
 		.run();
@@ -72,9 +73,9 @@ export async function upsertSourceConfig(db: D1Database, source: SourceConfig): 
 			parsed.policy.maxRecordsPerRun,
 			parsed.policy.retryLimit,
 			parsed.policy.timeoutSeconds,
-			parsed.policy.alertConfiguration
-				? JSON.stringify(parsed.policy.alertConfiguration)
-				: null,
+		parsed.policy.alertConfiguration
+			? safeJsonStringify(parsed.policy.alertConfiguration)
+			: null,
 		)
 		.run();
 
@@ -427,7 +428,7 @@ export async function insertRunIfMissing(
 			params.workflowInstanceId ?? null,
 			params.triggeredBy ?? null,
 			params.replayOfRunId ?? null,
-			JSON.stringify(params.envelope),
+			safeJsonStringify(params.envelope),
 		)
 		.run();
 }
@@ -517,7 +518,7 @@ export async function recordIngestError(
 			params.retryCount ?? 0,
 			3, // default max_retries
 			params.errorCategory ?? classification.errorCategory,
-			JSON.stringify(params.retryAttempts ?? []),
+			safeJsonStringify(params.retryAttempts ?? []),
 			1,
 		)
 		.run();
@@ -555,7 +556,7 @@ export async function updateErrorRetryState(
 	}
 	if (updates.retryAttempts !== undefined) {
 		sets.push("retry_attempts_json = ?");
-		values.push(JSON.stringify(updates.retryAttempts));
+		values.push(safeJsonStringify(updates.retryAttempts));
 	}
 	if (updates.resolvedAt !== undefined) {
 		sets.push("resolved_at = ?");

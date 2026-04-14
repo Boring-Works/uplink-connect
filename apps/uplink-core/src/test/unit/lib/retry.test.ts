@@ -252,6 +252,58 @@ describe("classifyError", () => {
 		expect(result.isTransient).toBe(true);
 		expect(result.errorCategory).toBe("network");
 	});
+
+	it("classifies HTTP 404 as non-transient", () => {
+		const response = new Response("Not found", { status: 404 });
+		const result = classifyError(response);
+		expect(result.isTransient).toBe(false);
+		expect(result.isRetryable).toBe(false);
+		expect(result.shouldSendToDlq).toBe(true);
+	});
+
+	it("classifies HTTP 401 as non-transient", () => {
+		const response = new Response("Unauthorized", { status: 401 });
+		const result = classifyError(response);
+		expect(result.isTransient).toBe(false);
+		expect(result.isRetryable).toBe(false);
+	});
+
+	it("classifies HTTP 429 as transient with rate limit delay", () => {
+		const response = new Response("Too many requests", { status: 429 });
+		const result = classifyError(response);
+		expect(result.isTransient).toBe(true);
+		expect(result.isRetryable).toBe(true);
+		expect(result.errorCategory).toBe("rate_limit");
+		expect(result.suggestedRetryDelayMs).toBe(60000);
+	});
+
+	it("classifies HTTP 503 as transient", () => {
+		const response = new Response("Service unavailable", { status: 503 });
+		const result = classifyError(response);
+		expect(result.isTransient).toBe(true);
+		expect(result.isRetryable).toBe(true);
+	});
+
+	it("extracts status from error objects with status property", () => {
+		const error = new Error("Bad request") as Error & { status: number };
+		error.status = 400;
+		const result = classifyError(error);
+		expect(result.isTransient).toBe(false);
+		expect(result.isRetryable).toBe(false);
+	});
+
+	it("extracts status from error messages", () => {
+		const result = classifyError(new Error("Request failed with status 422"));
+		expect(result.isTransient).toBe(false);
+		expect(result.isRetryable).toBe(false);
+	});
+
+	it("gives precedence to HTTP status over message patterns", () => {
+		// 404 should be non-transient even if message contains "timeout"
+		const response = new Response("timeout", { status: 404 });
+		const result = classifyError(response);
+		expect(result.isTransient).toBe(false);
+	});
 });
 
 // ============================================================================

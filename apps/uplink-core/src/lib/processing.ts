@@ -4,6 +4,7 @@ import {
 	IngestQueueMessageSchema,
 	buildRawArtifactKey,
 	createIngestQueueMessage,
+	safeJsonStringify,
 	toIsoNow,
 	type IngestQueueMessage,
 	type RetryAttempt,
@@ -140,7 +141,7 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 	}
 
 	const runId = envelope.ingestId;
-	const rawJson = JSON.stringify(envelope);
+	const rawJson = safeJsonStringify(envelope);
 	const processStartTime = Date.now();
 
 	// Insert run record with retry logic for idempotency
@@ -378,7 +379,7 @@ function getReplaySource(envelope: IngestQueueMessage["envelope"]): string | und
 
 function safeStringify(value: unknown): string {
 	try {
-		return JSON.stringify(value);
+		return safeJsonStringify(value);
 	} catch {
 		return "<unserializable>";
 	}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isTransientConnectionError, isNonTransientHttpStatus, safeJsonStringify } from "@uplink/contracts";
 
 // ============================================================================
 // Retry Policy Schemas
@@ -116,10 +117,52 @@ const PERMANENT_ERROR_PATTERNS = [
 	/Invalid API key/i,
 ];
 
+/**
+ * Extract HTTP status from an error if it represents a fetch/HTTP response failure.
+ */
+function extractHttpStatus(error: unknown): number | undefined {
+	if (error instanceof Response) {
+		return error.status;
+	}
+	if (error instanceof Error && "status" in error && typeof error.status === "number") {
+		return error.status;
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	// Try to extract status from common error message patterns
+	const match = message.match(/\bstatus[:\s]+(\d{3})\b/i) || message.match(/\b(\d{3})\s+\w+/);
+	if (match) {
+		const status = Number.parseInt(match[1] ?? "0", 10);
+		if (status >= 100 && status < 600) return status;
+	}
+	return undefined;
+}
+
 export function classifyError(error: unknown): ErrorClassification {
 	const message = error instanceof Error ? error.message : String(error);
 	const code = error instanceof Error && "code" in error ? String(error.code) : "";
 	const fullText = `${code} ${message}`;
+
+	// Check HTTP status first for fast non-transient classification
+	const httpStatus = extractHttpStatus(error);
+	if (httpStatus !== undefined) {
+		if (isNonTransientHttpStatus(httpStatus)) {
+			return {
+				isTransient: false,
+				isRetryable: false,
+				errorCategory: inferErrorCategory(fullText),
+				shouldSendToDlq: true,
+			};
+		}
+		if (httpStatus === 429) {
+			return {
+				isTransient: true,
+				isRetryable: true,
+				errorCategory: "rate_limit",
+				shouldSendToDlq: false,
+				suggestedRetryDelayMs: 60000,
+			};
+		}
+	}
 
 	// Check for permanent errors first (they take precedence)
 	for (const pattern of PERMANENT_ERROR_PATTERNS) {
@@ -131,6 +174,17 @@ export function classifyError(error: unknown): ErrorClassification {
 				shouldSendToDlq: true,
 			};
 		}
+	}
+
+	// Check for transient connection errors
+	if (isTransientConnectionError(error)) {
+		return {
+			isTransient: true,
+			isRetryable: true,
+			errorCategory: inferErrorCategory(fullText),
+			shouldSendToDlq: false,
+			suggestedRetryDelayMs: calculateSuggestedDelay(fullText),
+		};
 	}
 
 	// Check for transient errors
@@ -498,7 +552,7 @@ export function generateIdempotencyKey(context: {
 		context.runId ?? "",
 		context.entityId ?? "",
 		context.requestId ?? "",
-		context.payload ? JSON.stringify(context.payload) : "",
+		context.payload ? safeJsonStringify(context.payload) : "",
 	];
 
 	const key = components.join("::");

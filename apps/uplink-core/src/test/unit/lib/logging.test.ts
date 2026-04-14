@@ -360,4 +360,24 @@ describe("Span edge cases", () => {
 		expect(endEntry.context.initKey).toBe("initValue");
 		expect(endEntry.context.addedKey).toBe("addedValue");
 	});
+
+	it("sanitizes secrets from logged context", () => {
+		logger.info("test", { api_key: "super-secret-key", normal: "visible" });
+		const entry = JSON.parse(consoleSpy.mock.calls[0][0]);
+		expect(entry.context.api_key).toBe("sup***key");
+		expect(entry.context.normal).toBe("visible");
+	});
+
+	it("sanitizes nested secrets in logged context", () => {
+		logger.info("test", { config: { password: "hunter2000" }, safe: "ok" });
+		const entry = JSON.parse(consoleSpy.mock.calls[0][0]);
+		expect(entry.context.config.password).toBe("hun***000");
+		expect(entry.context.safe).toBe("ok");
+	});
+
+	it("sanitizes secret-looking values in logged context", () => {
+		logger.info("test", { myToken: "sk-abcdefghijklmnopqrstuvwxyz" });
+		const entry = JSON.parse(consoleSpy.mock.calls[0][0]);
+		expect(entry.context.myToken).toBe("sk-***xyz");
+	});
 });

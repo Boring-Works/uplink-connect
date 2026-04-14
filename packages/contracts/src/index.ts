@@ -501,3 +501,320 @@ export type ErrorRetryRequest = z.infer<typeof ErrorRetryRequestSchema>;
 export type ErrorRetryResponse = z.infer<typeof ErrorRetryResponseSchema>;
 export type ErrorListItem = z.infer<typeof ErrorListItemSchema>;
 export type ErrorListResponse = z.infer<typeof ErrorListResponseSchema>;
+
+// ============================================================================
+// Safe JSON Utilities (from promptfoo patterns)
+// ============================================================================
+
+/**
+ * Safely stringify a value to JSON, handling circular references, BigInt, and functions.
+ * Returns a fallback string if serialization fails entirely.
+ */
+export function safeJsonStringify(value: unknown, pretty = false): string {
+	const seen = new WeakSet<object>();
+	try {
+		return JSON.stringify(
+			value,
+			(_key, val) => {
+				if (typeof val === "bigint") {
+					return val.toString();
+				}
+				if (typeof val === "function") {
+					return "[Function]";
+				}
+				if (val instanceof Error) {
+					return {
+						name: val.name,
+						message: val.message,
+						stack: val.stack,
+					};
+				}
+				if (val && typeof val === "object") {
+					if (seen.has(val)) {
+						return "[Circular]";
+					}
+					seen.add(val);
+				}
+				return val;
+			},
+			pretty ? 2 : undefined,
+		);
+	} catch {
+		return "[Unserializable]";
+	}
+}
+
+/**
+ * Safely parse JSON without throwing.
+ */
+export function safeJsonParse<T = unknown>(text: string): T | undefined {
+	try {
+		return JSON.parse(text) as T;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Extract all JSON objects from a string (useful for parsing LLM outputs).
+ */
+export function extractJsonObjects(text: string): unknown[] {
+	const objects: unknown[] = [];
+	// Match JSON objects
+	const objectPattern = /\{[\s\S]*?\}/g;
+	const matches = text.match(objectPattern) ?? [];
+	for (const match of matches) {
+		try {
+			const parsed = JSON.parse(match);
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				objects.push(parsed);
+			}
+		} catch {
+			// ignore invalid JSON fragments
+		}
+	}
+	return objects;
+}
+
+/**
+ * Extract the first valid JSON object from a string.
+ */
+export function extractFirstJsonObject(text: string): unknown | undefined {
+	const objects = extractJsonObjects(text);
+	return objects[0];
+}
+
+// ============================================================================
+// Secret Sanitization (from promptfoo patterns)
+// ============================================================================
+
+const SECRET_FIELD_NAMES = new Set([
+	"api_key",
+	"api-key",
+	"apikey",
+	"auth_token",
+	"auth-token",
+	"authtoken",
+	"token",
+	"secret",
+	"secret_key",
+	"secret-key",
+	"secretkey",
+	"private_key",
+	"private-key",
+	"privatekey",
+	"password",
+	"passwd",
+	"pwd",
+	"credential",
+	"credentials",
+	"access_key",
+	"access-key",
+	"accesskey",
+	"session_token",
+	"session-token",
+	"sessiontoken",
+	"bearer",
+	"authorization",
+	"x-api-key",
+	"x-auth-token",
+	"ingest_api_key",
+	"core_internal_key",
+	"browser_api_key",
+	"ops_api_key",
+	"dashboard_password",
+	"slack_webhook_url",
+	"webhook_url",
+	"webhookUrl",
+	"routingKey",
+	"apiKey",
+]);
+
+const SECRET_VALUE_PATTERNS = [
+	// AWS keys
+	/AKIA[0-9A-Z]{16}/,
+	// Generic high-entropy tokens
+	/\b[br]ey_[a-zA-Z0-9_-]{20,}\b/,
+	/\bsk-[a-zA-Z0-9]{20,}\b/,
+	/\b[a-zA-Z0-9_-]*_[a-zA-Z0-9_-]{20,}\b/,
+	// Basic auth in URLs
+	/:\/\/[^\s@]+:[^\s@]+@/,
+];
+
+function looksLikeSecretValue(value: string): boolean {
+	return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function redactValue(value: string): string {
+	if (value.length <= 8) {
+		return "***";
+	}
+	return `${value.slice(0, 3)}***${value.slice(-3)}`;
+}
+
+/**
+ * Recursively sanitize an object by redacting known secret fields and values.
+ * Operates on a deep clone to avoid mutating the original.
+ */
+export function sanitizeObject<T>(obj: T, maxDepth = 10): T {
+	if (maxDepth <= 0) {
+		return "[MaxDepth]" as unknown as T;
+	}
+
+	if (obj === null || obj === undefined) {
+		return obj;
+	}
+
+	if (typeof obj === "string") {
+		if (looksLikeSecretValue(obj)) {
+			return redactValue(obj) as unknown as T;
+		}
+		return obj;
+	}
+
+	if (typeof obj === "number" || typeof obj === "boolean") {
+		return obj;
+	}
+
+	if (obj instanceof Date) {
+		return new Date(obj.getTime()) as unknown as T;
+	}
+
+	if (Array.isArray(obj)) {
+		return obj.map((item) => sanitizeObject(item, maxDepth - 1)) as unknown as T;
+	}
+
+	if (typeof obj === "object") {
+		const result: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(obj)) {
+			const lowerKey = key.toLowerCase();
+			if (SECRET_FIELD_NAMES.has(key) || SECRET_FIELD_NAMES.has(lowerKey)) {
+				if (typeof value === "string") {
+					result[key] = redactValue(value);
+				} else if (typeof value === "number" || typeof value === "boolean") {
+					result[key] = "***";
+				} else if (value && typeof value === "object") {
+					result[key] = "[Redacted]";
+				} else {
+					result[key] = value;
+				}
+			} else {
+				result[key] = sanitizeObject(value, maxDepth - 1);
+			}
+		}
+		return result as T;
+	}
+
+	return obj;
+}
+
+/**
+ * Sanitize a URL by redacting any username:password credentials.
+ */
+export function sanitizeUrl(url: string): string {
+	try {
+		const parsed = new URL(url);
+		if (parsed.password || parsed.username) {
+			parsed.password = "";
+			parsed.username = "";
+			return parsed.toString();
+		}
+		return url;
+	} catch {
+		return url;
+	}
+}
+
+// ============================================================================
+// Fetch Error Classification (from promptfoo patterns)
+// ============================================================================
+
+const NON_TRANSIENT_HTTP_STATUSES = new Set([
+	400, // Bad Request
+	401, // Unauthorized
+	403, // Forbidden
+	404, // Not Found
+	405, // Method Not Allowed
+	406, // Not Acceptable
+	409, // Conflict
+	410, // Gone
+	411, // Length Required
+	412, // Precondition Failed
+	413, // Payload Too Large
+	414, // URI Too Long
+	415, // Unsupported Media Type
+	416, // Range Not Satisfiable
+	422, // Unprocessable Entity
+	426, // Upgrade Required
+	501, // Not Implemented
+]);
+
+const TRANSIENT_HTTP_STATUSES = new Set([
+	408, // Request Timeout
+	429, // Too Many Requests
+	500, // Internal Server Error
+	502, // Bad Gateway
+	503, // Service Unavailable
+	504, // Gateway Timeout
+]);
+
+/**
+ * Check if an HTTP status code indicates a non-transient (should not retry) error.
+ */
+export function isNonTransientHttpStatus(status: number): boolean {
+	return NON_TRANSIENT_HTTP_STATUSES.has(status);
+}
+
+/**
+ * Check if an HTTP status code indicates a transient (retryable) error.
+ */
+export function isTransientHttpStatus(status: number): boolean {
+	return TRANSIENT_HTTP_STATUSES.has(status);
+}
+
+/**
+ * Classify an HTTP response as transient or non-transient.
+ * Returns undefined if the status is ambiguous.
+ */
+export function classifyHttpStatus(status: number): "transient" | "non-transient" | undefined {
+	if (isNonTransientHttpStatus(status)) return "non-transient";
+	if (isTransientHttpStatus(status)) return "transient";
+	return undefined;
+}
+
+/**
+ * Check if an error looks like a transient network/connection error.
+ */
+export function isTransientConnectionError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	const message = error.message.toLowerCase();
+	const patterns = [
+		"econnreset",
+		"etimedout",
+		"econnrefused",
+		"enotfound",
+		"eai_again",
+		"network error",
+		"fetch failed",
+		"abort",
+		"timeout",
+		"worker exceeded",
+		"cpu time exceeded",
+		"bad gateway",
+		"gateway timeout",
+		"service unavailable",
+	];
+	return patterns.some((p) => message.includes(p));
+}
+
+/**
+ * Determine whether an HTTP error should be retried.
+ * Combines status code analysis with connection error heuristics.
+ */
+export function shouldRetryHttpError(status: number, error?: unknown): boolean {
+	if (isNonTransientHttpStatus(status)) return false;
+	if (isTransientHttpStatus(status)) return true;
+	if (error && isTransientConnectionError(error)) return true;
+	// Default: retry unknown statuses once
+	return true;
+}
