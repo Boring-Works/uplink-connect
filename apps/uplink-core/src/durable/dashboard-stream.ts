@@ -13,7 +13,7 @@ interface DashboardMessage {
 }
 
 const BROADCAST_INTERVAL_MS = 5000;
-const ALARM_KEY = "dashboard_alarm_scheduled";
+const HEARTBEAT_INTERVAL_MS = 15000;
 
 export class DashboardStreamDO extends DurableObject<Env> {
 	private clients: Map<WebSocket, DashboardClient> = new Map();
@@ -76,7 +76,6 @@ export class DashboardStreamDO extends DurableObject<Env> {
 	async webSocketClose(ws: WebSocket) {
 		this.clients.delete(ws);
 		if (this.clients.size === 0) {
-			await this.ctx.storage.delete(ALARM_KEY);
 			const alarm = await this.ctx.storage.getAlarm();
 			if (alarm) {
 				await this.ctx.storage.deleteAlarm();
@@ -84,20 +83,32 @@ export class DashboardStreamDO extends DurableObject<Env> {
 		}
 	}
 
+	async webSocketError(ws: WebSocket) {
+		this.clients.delete(ws);
+	}
+
 	async alarm(): Promise<void> {
 		if (this.clients.size === 0) {
-			await this.ctx.storage.delete(ALARM_KEY);
 			return;
 		}
 
-		await this.broadcastMetrics();
-		await this.ctx.storage.setAlarm(Date.now() + BROADCAST_INTERVAL_MS);
+		try {
+			await this.broadcastMetrics();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error("[DashboardStreamDO] broadcastMetrics failed:", message);
+		}
+
+		try {
+			await this.ctx.storage.setAlarm(Date.now() + BROADCAST_INTERVAL_MS);
+		} catch (alarmErr) {
+			console.error("[DashboardStreamDO] Failed to reschedule alarm:", alarmErr);
+		}
 	}
 
 	private async ensureAlarm(): Promise<void> {
-		const scheduled = await this.ctx.storage.get<boolean>(ALARM_KEY);
-		if (!scheduled) {
-			await this.ctx.storage.put(ALARM_KEY, true);
+		const alarm = await this.ctx.storage.getAlarm();
+		if (!alarm) {
 			await this.ctx.storage.setAlarm(Date.now() + BROADCAST_INTERVAL_MS);
 		}
 	}
@@ -115,15 +126,20 @@ export class DashboardStreamDO extends DurableObject<Env> {
 		}
 
 		const message = JSON.stringify({ type: "metrics", data: metrics });
+		const deadSockets: WebSocket[] = [];
 
-		for (const client of this.clients.values()) {
+		for (const [socket, client] of this.clients.entries()) {
 			if (client.subscribedTopics.has("metrics") || client.subscribedTopics.has("all")) {
 				try {
-					client.ws.send(message);
+					socket.send(message);
 				} catch {
-					// Client may have disconnected
+					deadSockets.push(socket);
 				}
 			}
+		}
+
+		for (const socket of deadSockets) {
+			this.clients.delete(socket);
 		}
 	}
 

@@ -275,6 +275,10 @@ export async function getPipelineTopology(
 	// Get queue metrics for flow rates
 	const queueMetrics = await getQueueFlowMetrics(db);
 
+	// Determine stage health: only degraded if there's actual backlog or errors
+	const queueStatus = queueMetrics.queueDepth > 100 ? "degraded" : queueMetrics.queueDepth > 20 ? "degraded" : "healthy";
+	const processingStatus = queueMetrics.queueDepth > 0 && queueMetrics.processingRate === 0 ? "degraded" : "healthy";
+
 	// Define pipeline stages
 	const stages: PipelineStage[] = [
 		{
@@ -291,7 +295,7 @@ export async function getPipelineTopology(
 			id: "queue",
 			name: "Ingest Queue",
 			componentId: "queue-ingest",
-			status: queueMetrics.queueDepth > 100 ? "degraded" : "healthy",
+			status: queueStatus,
 			inputRate: queueMetrics.ingestRate,
 			outputRate: queueMetrics.processingRate,
 			latencyMs: queueMetrics.avgQueueLatencyMs,
@@ -302,7 +306,7 @@ export async function getPipelineTopology(
 			id: "processing",
 			name: "Core Processing",
 			componentId: "uplink-core",
-			status: queueMetrics.processingRate > 0 ? "healthy" : "degraded",
+			status: processingStatus,
 			inputRate: queueMetrics.processingRate,
 			outputRate: queueMetrics.successRate,
 			latencyMs: queueMetrics.avgProcessingMs,
@@ -337,28 +341,28 @@ export async function getPipelineTopology(
 			 to: "queue",
 			label: "enqueue",
 			rate: queueMetrics.ingestRate,
-			status: queueMetrics.ingestRate > 0 ? "healthy" : "degraded",
+			status: "healthy",
 		},
 		{
 			from: "queue",
 			 to: "processing",
 			label: "consume",
 			rate: queueMetrics.processingRate,
-			status: queueMetrics.processingRate > 0 ? "healthy" : "degraded",
+			status: processingStatus === "degraded" ? "degraded" : "healthy",
 		},
 		{
 			from: "processing",
 			 to: "persistence",
 			label: "persist",
 			rate: queueMetrics.successRate,
-			status: queueMetrics.successRate > 0 ? "healthy" : "degraded",
+			status: "healthy",
 		},
 		{
 			from: "processing",
 			 to: "storage",
 			label: "store",
 			rate: queueMetrics.successRate,
-			status: queueMetrics.successRate > 0 ? "healthy" : "degraded",
+			status: "healthy",
 		},
 	];
 

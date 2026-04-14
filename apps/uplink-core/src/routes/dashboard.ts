@@ -779,6 +779,9 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		const toast = document.getElementById('toast');
 		let ws;
 		let reconnectTimer;
+		let heartbeatTimer;
+		let reconnectDelay = 3000;
+		let wasConnected = false;
 
 		function showToast(message, type) {
 			toast.textContent = message;
@@ -800,13 +803,28 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			}
 		};
 
+		function clearTimers() {
+			if (reconnectTimer) clearTimeout(reconnectTimer);
+			if (heartbeatTimer) clearInterval(heartbeatTimer);
+		}
+
 		function connect() {
+			clearTimers();
 			ws = new WebSocket(wsUrl);
+
 			ws.onopen = function() {
+				wasConnected = true;
+				reconnectDelay = 3000;
 				statusEl.textContent = 'Live updates connected';
 				statusEl.className = 'ws-connected';
 				ws.send(JSON.stringify({ type: 'subscribe', topics: ['metrics', 'all'] }));
+				heartbeatTimer = setInterval(function() {
+					if (ws && ws.readyState === WebSocket.OPEN) {
+						ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+					}
+				}, 15000);
 			};
+
 			ws.onmessage = function(event) {
 				try {
 					const msg = JSON.parse(event.data);
@@ -817,11 +835,22 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 					console.error('WS parse error:', e);
 				}
 			};
+
 			ws.onclose = function() {
-				statusEl.textContent = 'Reconnecting...';
-				statusEl.className = 'ws-reconnecting';
-				reconnectTimer = setTimeout(connect, 3000);
+				clearTimers();
+				if (wasConnected) {
+					statusEl.textContent = 'Reconnecting...';
+					statusEl.className = 'ws-reconnecting';
+				} else {
+					statusEl.textContent = 'Connecting to real-time updates...';
+					statusEl.className = 'ws-reconnecting';
+				}
+				reconnectTimer = setTimeout(function() {
+					reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+					connect();
+				}, reconnectDelay);
 			};
+
 			ws.onerror = function() {
 				statusEl.textContent = 'Connection error';
 				statusEl.className = 'ws-error';
@@ -854,7 +883,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 
 		connect();
 		window.addEventListener('beforeunload', function() {
-			if (reconnectTimer) clearTimeout(reconnectTimer);
+			clearTimers();
 			if (ws) ws.close();
 		});
 	})();
