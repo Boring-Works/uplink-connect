@@ -10,6 +10,7 @@ import {
 type Env = {
 	INGEST_QUEUE: Queue;
 	UPLINK_CORE: Fetcher;
+	RAW_BUCKET?: R2Bucket;
 	INGEST_API_KEY?: string;
 	CORE_INTERNAL_KEY?: string;
 };
@@ -138,6 +139,99 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 			sourceId,
 			recordCount: 1,
 			receivedAt: queueMessage.receivedAt,
+		},
+		202,
+	);
+});
+
+app.post("/v1/files/:sourceId", async (c) => {
+	if (!c.env.INGEST_API_KEY) {
+		return c.json({ error: "INGEST_API_KEY not configured" }, 500);
+	}
+
+	if (!isAuthorized(c.req.raw, c.env.INGEST_API_KEY)) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+
+	const sourceId = c.req.param("sourceId");
+	const contentType = c.req.header("content-type") ?? "";
+
+	if (!contentType.includes("multipart/form-data")) {
+		return c.json({ error: "Expected multipart/form-data" }, 400);
+	}
+
+	const formData = await c.req.formData();
+	const files = formData.getAll("file");
+
+	if (files.length === 0) {
+		return c.json({ error: "No files provided. Use 'file' field name." }, 400);
+	}
+
+	if (!c.env.RAW_BUCKET) {
+		return c.json({ error: "RAW_BUCKET not configured" }, 500);
+	}
+
+	const results: Array<{ fileName: string; ingestId: string; size: number; key: string }> = [];
+
+	for (const file of files) {
+		if (!(file instanceof File)) {
+			continue;
+		}
+
+		const ingestId = crypto.randomUUID();
+		const key = `uploads/${sourceId}/${ingestId}/${file.name}`;
+		const buffer = await file.arrayBuffer();
+
+		await c.env.RAW_BUCKET.put(key, buffer, {
+			httpMetadata: { contentType: file.type || "application/octet-stream" },
+			customMetadata: {
+				sourceId,
+				fileName: file.name,
+				ingestId,
+				uploadedAt: toIsoNow(),
+			},
+		});
+
+		const contentHash = await computeContentHash(new TextDecoder().decode(buffer));
+
+		const envelope: IngestEnvelope = {
+			schemaVersion: "1.0",
+			ingestId,
+			sourceId,
+			sourceName: sourceId,
+			sourceType: "file",
+			collectedAt: toIsoNow(),
+			hasMore: false,
+			records: [
+				{
+					externalId: file.name,
+					contentHash,
+					rawPayload: {
+						fileName: file.name,
+						contentType: file.type || "application/octet-stream",
+						size: file.size,
+						r2Key: key,
+					},
+					observedAt: toIsoNow(),
+				},
+			],
+		};
+
+		const queueMessage = createIngestQueueMessage(envelope, {
+			requestId: c.req.header("x-request-id") ?? crypto.randomUUID(),
+		});
+
+		await c.env.INGEST_QUEUE.send(queueMessage);
+
+		results.push({ fileName: file.name, ingestId, size: file.size, key });
+	}
+
+	return c.json(
+		{
+			ok: true,
+			sourceId,
+			uploaded: results.length,
+			files: results,
 		},
 		202,
 	);

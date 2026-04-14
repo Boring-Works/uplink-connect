@@ -178,6 +178,106 @@ describe("uplink-edge unit", () => {
 		});
 	});
 
+	describe("file upload", () => {
+		it("rejects non-multipart requests", async () => {
+			const env = createEnv();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/files/src-1", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: "{}",
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("rejects missing files", async () => {
+			const env = createEnv();
+			const form = new FormData();
+			const res = await app.fetch(
+				new Request("http://localhost/v1/files/src-1", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key" },
+					body: form,
+				}),
+				env,
+			);
+			expect(res.status).toBe(400);
+		});
+
+		it("rejects when RAW_BUCKET not configured", async () => {
+			const env = createEnv();
+			const form = new FormData();
+			form.append("file", new File(["test"], "test.txt", { type: "text/plain" }));
+			const res = await app.fetch(
+				new Request("http://localhost/v1/files/src-1", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key" },
+					body: form,
+				}),
+				env,
+			);
+			expect(res.status).toBe(500);
+		});
+
+		it("uploads file and queues envelope", async () => {
+			const env = createEnv();
+			const sendSpy = vi.fn().mockResolvedValue(undefined);
+			const putSpy = vi.fn().mockResolvedValue(undefined);
+			env.INGEST_QUEUE = { send: sendSpy } as unknown as Queue;
+			env.RAW_BUCKET = { put: putSpy } as unknown as R2Bucket;
+
+			const form = new FormData();
+			form.append("file", new File(["hello world"], "hello.txt", { type: "text/plain" }));
+
+			const res = await app.fetch(
+				new Request("http://localhost/v1/files/src-1", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key" },
+					body: form,
+				}),
+				env,
+			);
+
+			expect(res.status).toBe(202);
+			expect(putSpy).toHaveBeenCalledTimes(1);
+			expect(sendSpy).toHaveBeenCalledTimes(1);
+
+			const body = await res.json() as { uploaded: number; files: Array<{ fileName: string }> };
+			expect(body.uploaded).toBe(1);
+			expect(body.files[0].fileName).toBe("hello.txt");
+		});
+
+		it("uploads multiple files", async () => {
+			const env = createEnv();
+			const sendSpy = vi.fn().mockResolvedValue(undefined);
+			const putSpy = vi.fn().mockResolvedValue(undefined);
+			env.INGEST_QUEUE = { send: sendSpy } as unknown as Queue;
+			env.RAW_BUCKET = { put: putSpy } as unknown as R2Bucket;
+
+			const form = new FormData();
+			form.append("file", new File(["a"], "a.txt", { type: "text/plain" }));
+			form.append("file", new File(["b"], "b.txt", { type: "text/plain" }));
+
+			const res = await app.fetch(
+				new Request("http://localhost/v1/files/src-1", {
+					method: "POST",
+					headers: { authorization: "Bearer test-api-key" },
+					body: form,
+				}),
+				env,
+			);
+
+			expect(res.status).toBe(202);
+			expect(putSpy).toHaveBeenCalledTimes(2);
+			expect(sendSpy).toHaveBeenCalledTimes(2);
+
+			const body = await res.json() as { uploaded: number };
+			expect(body.uploaded).toBe(2);
+		});
+	});
+
 	describe("trigger proxy", () => {
 		it("passes force parameter to core", async () => {
 			const env = createEnv();
