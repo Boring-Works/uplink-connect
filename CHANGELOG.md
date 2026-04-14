@@ -48,6 +48,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added 35+ new tests across all suites
 - Total test count: 554+ (up from 519)
 
+#### Real Data Source
+- **USGS Earthquake Ingestion** - Hourly automated collection from USGS public API
+  - Source: `usgs-earthquakes-hourly`
+  - Auto-triggers every hour via cron (`0 * * * *`)
+  - Verified end-to-end: entity stored in D1, artifact in R2, dashboard shows live flow
+
+#### Bug Fixes (P0)
+- Fixed `ingest_queue_status` missing table crash in `DashboardStreamDO`
+- Replaced `setInterval` with DO alarms in `DashboardStreamDO` and `NotificationDispatcher`
+- Fixed file upload memory bomb (no more `TextDecoder().decode(buffer)` on large files)
+- Added constant-time auth comparison (`timingSafeEqual`) across all workers
+- Fixed `CollectionWorkflow` fetch binding (`Illegal invocation` error)
+- Fixed `fastStableHash` output length to meet `contentHash` schema requirement (>=16 chars)
+- Fixed malformed `wrangler.jsonc` where `triggers` was nested inside `queues`
+- Removed misplaced notification test endpoint from `browser.ts`
+
 ---
 
 ## [0.1.0] - 2026-04-12

@@ -123,7 +123,8 @@ UplinkConnect/
 ├── scripts/
 │   ├── deploy.sh             # Full deployment automation
 │   ├── bootstrap.sh          # Environment setup
-│   └── smoke-test.sh         # Post-deployment validation
+│   ├── smoke-test.sh         # Post-deployment validation
+│   └── setup-usgs-source.sh  # Configure live public data source
 ├── infra/
 │   ├── README.md             # Infrastructure docs
 │   └── wrangler.*.template.jsonc  # Config templates
@@ -222,6 +223,7 @@ pnpm dev:ops
 ./scripts/deploy.sh
 ./scripts/bootstrap.sh --secrets
 ./scripts/smoke-test.sh
+./scripts/setup-usgs-source.sh
 ```
 
 ## Environment Variables

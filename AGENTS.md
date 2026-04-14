@@ -65,6 +65,7 @@ pnpm dev:ops       # Terminal 4
 ./scripts/deploy.sh
 ./scripts/bootstrap.sh --secrets
 ./scripts/smoke-test.sh
+./scripts/setup-usgs-source.sh
 ```
 
 ---
@@ -235,10 +236,20 @@ pnpm vitest run --config vitest.live.config.ts
 **Dashboard shows zeros:**
 - Normal if no data ingested
 - Check `/internal/dashboard/v2` with internal key
+- Run `./scripts/setup-usgs-source.sh` to configure a live public data source
 
 **WebSocket connections failing:**
 - Ensure `DASHBOARD_STREAM` and `ERROR_AGENT` DO bindings are in wrangler.jsonc
 - Check that v4 migration has been applied
+- Verify DO uses `storage.setAlarm()` not `setInterval`
+
+**Queue messages not processing:**
+- Check `wrangler.jsonc` structure: `triggers` must be at root level, not inside `queues`
+- Verify queue consumer binding is correct
+- Check `ingest_errors` table for validation failures (e.g., `contentHash` length)
+
+**`Illegal invocation` in CollectionWorkflow:**
+- Ensure `fetchFn` is passed as arrow function: `(input, init) => fetch(input, init)`
 
 ---
 
@@ -287,4 +298,4 @@ pnpm vitest run --config vitest.live.config.ts
 
 ## Last Updated
 
-April 14, 2026 - v0.1.1 with WebSocket real-time dashboard, RAG error agent, and data export API
+April 14, 2026 - v0.1.1 with live USGS data source, all P0 bugs fixed, WebSocket real-time dashboard, RAG error agent, and data export API

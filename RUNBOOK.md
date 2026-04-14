@@ -1,6 +1,6 @@
 # Uplink Connect - Daily Operations Runbook
 
-**Version:** 0.2.1
+**Version:** 0.2.2
 **Last Updated:** 2026-04-14
 **For:** Daily production operations
 
@@ -25,6 +25,19 @@ curl https://uplink-core.codyboring.workers.dev/internal/dashboard/v2 \
 - `/health` returns `{"ok":true}`
 - `/dashboard` returns HTML with 200 status
 - `/internal/dashboard/v2` returns JSON metrics
+
+### Live Data Sources
+
+The following public data sources are configured for continuous collection:
+
+- **USGS Earthquakes (Hourly)** — `usgs-earthquakes-hourly`
+  - Auto-triggers every hour via cron
+  - Setup script: `./scripts/setup-usgs-source.sh`
+  - Verify collection:
+    ```bash
+    curl "https://uplink-core.codyboring.workers.dev/internal/runs?sourceId=usgs-earthquakes-hourly&limit=5" \
+      -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+    ```
 
 ---
 

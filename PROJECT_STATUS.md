@@ -1,15 +1,15 @@
 # Uplink Connect - Project Status Report
 
-**Date:** April 13, 2026  
-**Version:** v0.1.0  
-**Status:** Production Ready  
+**Date:** April 14, 2026  
+**Version:** v0.1.1  
+**Status:** Production Ready — Live Data Flowing  
 **Repository:** https://github.com/Boring-Works/uplink-connect
 
 ---
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system successfully deployed to Cloudflare Workers with all 500+ tests passing.
+Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 554 tests pass, and it is actively processing real data from a live public API source.
 
 ### Live Deployment
 - **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
@@ -33,7 +33,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **D1 Database** | ✅ Provisioned | 8 migrations applied |
+| **D1 Database** | ✅ Provisioned | 9 migrations applied |
 | **R2 Storage** | ✅ Provisioned | Raw artifacts bucket |
 | **Queues** | ✅ Active | Ingest queue + DLQ |
 | **Vectorize** | ✅ Provisioned | Entity search index |
@@ -50,6 +50,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Entity normalization and deduplication
 - ✅ Vectorize semantic search
 - ✅ **AST-based code chunking** - Intelligent chunking of TS/JS files by constructs (function, class, interface, type)
+- ✅ **Live public data source** - USGS earthquakes hourly collection actively running
 
 #### Coordination & Reliability
 - ✅ Durable Object-based source coordination
@@ -112,6 +113,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 |----------|-----------|
 | **Dashboard** | `/dashboard`, `/internal/dashboard/v2` |
 | **Health** | `/internal/health/components`, `/internal/health/topology`, `/internal/health/flow` |
+| **Scheduled Sources** | Auto-trigger via cron (`0 * * * *` for USGS earthquakes) |
 | **Sources** | CRUD, trigger, health timeline, runs tree |
 | **Runs** | List, get, replay, trace |
 | **Entities** | Search, lineage |
@@ -212,6 +214,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Lines of Code | ~19,655 (TypeScript) |
 | Test Coverage | 554 tests |
 | Migrations | 9 |
+| Live Data Sources | 1 (USGS earthquakes hourly) |
+| Last Verified | April 14, 2026 |
 | Documentation | 11 files, ~3,700 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
 | CI/CD Workflows | 1 (GitHub Actions) |
@@ -230,6 +234,9 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Synthetic monitoring active
 - ✅ 2 new Durable Objects (DashboardStreamDO, ErrorAgentDO)
 - ✅ WebSocket hibernation for real-time features
+- ✅ DO alarms replace setInterval in all DOs
+- ✅ Constant-time auth comparisons across all workers
+- ✅ Real public API data flowing end-to-end
 
 ---
 
@@ -258,6 +265,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - [x] Create OpenAPI spec from routes
 - [x] Add PagerDuty/Slack alert integrations
 - [x] Apply AST-based chunking from RepoMind patterns
+- [x] Fix all P0 bugs (DO alarms, auth timing, hash length, fetch binding, queue config)
+- [x] Wire up live public data source (USGS earthquakes)
 
 ### Medium Value
 - [x] Split large files (db.ts, index.ts)
@@ -304,6 +313,21 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - **WebSocket Dashboard**: `DashboardStreamDO` streams live metrics to connected clients every 5 seconds
 - **RAG Error Agent**: `ErrorAgentDO` uses Vectorize + Workers AI to diagnose errors via WebSocket chat
 - **Data Export API**: Export runs, entities, and errors in JSON, CSV, or NDJSON formats
+
+### Live Data Source
+- **USGS Earthquakes**: Hourly automated collection from public USGS API
+  - Source ID: `usgs-earthquakes-hourly`
+  - Verified: entities in D1, artifacts in R2, dashboard shows live flow
+  - Setup script: `scripts/setup-usgs-source.sh`
+
+### P0 Bug Fixes
+- Replaced `setInterval` with DO alarms in `DashboardStreamDO` and `NotificationDispatcher`
+- Fixed file upload memory bomb (direct ArrayBuffer hashing)
+- Added constant-time auth comparison across all 4 workers
+- Fixed `CollectionWorkflow` fetch `Illegal invocation` error
+- Fixed `fastStableHash` length to meet schema requirement (>=16 chars)
+- Fixed malformed `wrangler.jsonc` (triggers nested inside queues)
+- Removed misplaced notification endpoint from `browser.ts`
 
 ### DevOps & Monitoring
 - **GitHub Actions CI/CD**: Automated testing on PRs and pushes to main

@@ -27,6 +27,7 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Protected operations**: Secure ops API for run management and replay
 - **Universal notifications**: 8 providers including Slack, Discord, PagerDuty, Teams
 - **Code intelligence**: AST-based chunking for TS/JS file ingestion
+- **Live public data source**: USGS earthquakes hourly collection actively running
 
 ## Architecture
 
@@ -143,6 +144,17 @@ pnpm dev:browser
 # Terminal 4: Start ops service
 pnpm dev:ops
 ```
+
+### Live Data Source Example
+
+A real public data source is actively collecting:
+
+```bash
+# Set up USGS earthquakes hourly collection
+./scripts/setup-usgs-source.sh
+```
+
+This configures `usgs-earthquakes-hourly` and triggers an initial collection. The source auto-triggers every hour via cron.
 
 ### Environment Setup
 
