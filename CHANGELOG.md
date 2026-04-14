@@ -5,6 +5,51 @@ All notable changes to Uplink Connect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-14
+
+### Added
+
+#### Real-time & AI
+- **DashboardStreamDO** - WebSocket Durable Object for live dashboard metrics streaming
+  - Hibernation-enabled for efficiency
+  - Broadcasts metrics every 5 seconds to subscribed clients
+  - Endpoint: `GET /internal/stream/dashboard`
+  
+- **ErrorAgentDO** - RAG-based error diagnosis via WebSocket
+  - Embeds error descriptions using `@cf/baai/bge-small-en-v1.5`
+  - Searches Vectorize `errors` namespace for similar past errors
+  - Streams AI diagnosis via `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+  - Endpoint: `GET /internal/agent/error`
+
+#### Data Export
+- **Export API** - Export runs, entities, and errors in multiple formats
+  - `GET /internal/export/runs` - Filter by source, date, status
+  - `GET /internal/export/entities` - Filter by source, entity type
+  - `GET /internal/export/errors` - Filter by source
+  - Supports `json` (default), `csv`, and `ndjson` formats
+  - Limit up to 50,000 records per export
+
+#### Code Intelligence
+- **AST-based Chunking** - Added `chunkCode()` to `@uplink/normalizers`
+  - Intelligently chunks TS/JS files by constructs: function, class, interface, type, import, export, comment
+  - Falls back to line-based chunking for non-code files
+  - Configurable `maxChunkSize` and `minChunkSize`
+
+#### Dashboard Enhancements
+- Updated `/dashboard` HTML with WebSocket client for real-time metric updates
+- Auto-reconnect on connection loss
+- Live updates for sources count, runs, queue depth, and alerts
+
+#### Infrastructure
+- Added v4 Durable Object migration for `DashboardStreamDO` and `ErrorAgentDO`
+- Updated wrangler.jsonc with new DO bindings
+
+#### Testing
+- Added 35+ new tests across all suites
+- Total test count: 554+ (up from 519)
+
+---
+
 ## [0.1.0] - 2026-04-12
 
 ### Added
@@ -14,13 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/health` health check endpoint
   - `/v1/intake` ingest envelope submission with queue handoff
   - `/v1/sources/:sourceId/trigger` manual source triggering
-  
+  - `/v1/webhooks/:sourceId` webhook receiver with HMAC verification
+  - `/v1/files/:sourceId` multipart file upload
+   
 - **uplink-core** - Internal processing service
   - Queue consumer with idempotent processing
   - D1 operational data store integration
   - R2 raw artifact persistence
   - Entity normalization pipeline
   - Vectorize indexing for semantic search
+  - 45+ internal endpoints
   
 - **uplink-browser** - Browser collection service
   - `/health` health check
@@ -37,8 +85,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Lease acquisition and release
   - Cursor progression tracking
   - Rate limiting enforcement
-  - Failure counting
+  - Failure counting and auto-pause
   - Runtime state snapshots
+  - Backpressure support
+
+- **BrowserManagerDO** - Browser session management
+  - Session allocation and cleanup
+  - Concurrent collection handling
+
+- **NotificationDispatcher** - Rate-limited notification delivery
+  - 8 provider support (webhook, slack, discord, teams, pagerduty, opsgenie, email, custom)
+  - Retry logic with throttling
 
 #### Workflows
 - **CollectionWorkflow** - Durable collection orchestration
@@ -52,9 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dry-run support
 
 #### Data Model
-- **D1 Migrations**
-  - `sources` - Source registry
-  - `source_configs` - Detailed configuration
+- **D1 Migrations (9 total)**
+  - `source_configs` - Source registry
   - `source_policies` - Rate limits and retry policy
   - `source_capabilities` - Feature flags
   - `source_runtime_snapshots` - DO state cache
@@ -64,7 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `entity_observations` - Historical observations
   - `entity_links` - Relationship tracking
   - `ingest_errors` - Error tracking with retry state
-  - `alerts` - Alert management
+  - `retry_idempotency_keys` - Idempotency tracking
+  - `retention_audit_log` - Cleanup audit trail
+  - `alerts_active` - Alert management
+  - `source_metrics_5min` - Time-series metrics
+  - `platform_settings` - Global configuration
+  - `audit_log` - Operator action log
 
 #### Packages
 - **@uplink/contracts** - Shared schemas and types
@@ -84,6 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Canonical entity mapping
   - Content hash generation
   - Deduplication logic
+  - Code chunking (added in v0.1.1)
 
 #### Observability
 - **Metrics System**
@@ -92,6 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Queue depth tracking
   - Entity count metrics
   - Analytics Engine integration
+  - Synthetic monitoring cron (every 5 minutes)
   
 - **Alerting System**
   - Configurable alert rules
@@ -107,8 +170,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Bulk retry capability
   - DLQ integration
 
+- **Dashboard**
+  - Self-hosted HTML dashboard at `/dashboard`
+  - Pipeline topology visualization
+  - Component health monitoring
+  - Data flow metrics
+  - Source health timeline
+  - Run tracing
+  - Entity lineage
+  - Real-time WebSocket updates (added in v0.1.1)
+
 #### API Endpoints
-- 35+ endpoints across all services
+- 55+ endpoints across all services
 - Consistent authentication patterns
 - Structured error responses
 - Pagination support
@@ -118,14 +191,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive README with architecture diagram
 - Complete API reference (API.md)
 - Operations guide with runbooks (OPERATIONS.md)
-- Updated roadmap with completed items
+- Daily runbook (RUNBOOK.md)
+- Updated roadmap with completed items (ROADMAP.md)
 - This changelog
+- Project status report (PROJECT_STATUS.md)
+- Agent instructions (AGENTS.md)
+- Audit report (AUDIT_REPORT.md)
+- Metrics and alerting guide (METRICS_ALERTING.md)
+- OpenAPI 3.0 specification (openapi.yml)
+
+#### DevOps
+- GitHub Actions CI/CD workflow
+- Automated testing on PRs and pushes
+- Deployment scripts (deploy.sh, bootstrap.sh, smoke-test.sh)
 
 ### Security
 - Bearer token authentication for external endpoints
 - Internal key authentication for service-to-service
 - No secrets in code or committed configuration
 - Secret reference pattern for source credentials
+- Webhook HMAC signature verification
 
 ### Performance
 - Queue-based async processing decouples intake from processing
@@ -140,6 +225,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared contract packages prevent shape drift
 - wrangler dev support for local development
 - Integration test scaffolding
+- Live test suite against production
 
 ### Infrastructure
 - Cloudflare Workers for compute
@@ -150,12 +236,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workflows for durable execution
 - Analytics Engine for metrics
 - Vectorize for semantic search
+- Workers AI for error diagnosis
 
 ## Migration Notes
 
-This is the initial release. No migrations from previous versions required.
+### v0.1.0 to v0.1.1
 
-### Database Setup
+No database schema changes required for v0.1.1. The new Durable Objects (`DashboardStreamDO`, `ErrorAgentDO`) use SQLite storage within the DO itself.
+
+To deploy v0.1.1:
+```bash
+cd apps/uplink-core
+wrangler deploy
+```
+
+### Initial Setup (v0.1.0)
 
 Apply migrations in order:
 ```bash
@@ -189,7 +284,7 @@ wrangler secret put BROWSER_API_KEY
 - Pipelines integration commented out (beta feature)
 - Browser Rendering binding configured but basic fetch used
 - Source adapters are foundation only - specific implementations needed
-- No built-in UI - API-only interface
+- Dashboard is HTML-based, not a full SPA
 - Single D1 database (sharding strategy documented for future)
 
 ## Contributors
@@ -204,4 +299,5 @@ wrangler secret put BROWSER_API_KEY
 
 ---
 
+[0.1.1]: https://github.com/boringworks/uplink-connect/releases/tag/v0.1.1
 [0.1.0]: https://github.com/boringworks/uplink-connect/releases/tag/v0.1.0

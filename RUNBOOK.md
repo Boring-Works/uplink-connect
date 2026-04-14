@@ -1,7 +1,7 @@
 # Uplink Connect - Daily Operations Runbook
 
-**Version:** 0.2.0  
-**Last Updated:** 2026-04-13  
+**Version:** 0.2.1
+**Last Updated:** 2026-04-14
 **For:** Daily production operations
 
 ---
@@ -14,11 +14,17 @@ curl https://uplink-edge.codyboring.workers.dev/health
 curl https://uplink-core.codyboring.workers.dev/health
 
 # Check dashboard
-curl https://uplink-core.codyboring.workers.dev/internal/dashboard \
+curl https://uplink-core.codyboring.workers.dev/dashboard
+
+# Check dashboard API
+curl https://uplink-core.codyboring.workers.dev/internal/dashboard/v2 \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
-**Expected:** All return `{"ok":true}`
+**Expected:**
+- `/health` returns `{"ok":true}`
+- `/dashboard` returns HTML with 200 status
+- `/internal/dashboard/v2` returns JSON metrics
 
 ---
 
@@ -56,6 +62,12 @@ curl https://uplink-core.codyboring.workers.dev/internal/metrics/queue \
 - 100-1000: Monitor closely
 - > 1000: Investigate processing bottleneck
 
+### 4. Check Component Health
+```bash
+curl https://uplink-core.codyboring.workers.dev/internal/health/components \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+```
+
 ---
 
 ## Common Issues & Quick Fixes
@@ -83,8 +95,10 @@ curl "https://uplink-core.codyboring.workers.dev/internal/errors?sourceId={sourc
 1. **If root cause fixed:**
 ```bash
 # Unpause source via coordinator DO
-curl -X POST "https://uplink-core.codyboring.workers.dev/internal/sources/{sourceId}/unpause" \
-  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+curl -X POST "https://uplink-core.codyboring.workers.dev/internal/sources/{sourceId}/trigger" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"triggeredBy":"ops","reason":"Unpause after fix"}'
 ```
 
 2. **If need to force trigger anyway:**
@@ -144,6 +158,10 @@ curl https://uplink-core.codyboring.workers.dev/internal/metrics/system \
 ```bash
 # Get run details
 curl "https://uplink-core.codyboring.workers.dev/internal/runs/{runId}" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Check run trace
+curl "https://uplink-core.codyboring.workers.dev/internal/runs/{runId}/trace" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Check source coordinator state
@@ -218,6 +236,78 @@ curl -X POST "https://uplink-core.codyboring.workers.dev/internal/search/entitie
 - Ingest continues, just without semantic search
 - Usually auto-resolves when Vectorize recovers
 - If persistent: Check Cloudflare status page
+
+---
+
+### Issue: Dashboard Not Updating
+
+**Symptoms:**
+- Dashboard shows stale data
+- "Connecting to real-time updates..." persists
+
+**Investigation:**
+```bash
+# Check dashboard API directly
+curl https://uplink-core.codyboring.workers.dev/internal/dashboard/v2 \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Check if WebSocket endpoint is accessible
+# (Should upgrade to WebSocket, not return HTML)
+curl -i "https://uplink-core.codyboring.workers.dev/internal/stream/dashboard" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+```
+
+**Resolution:**
+- Dashboard auto-refreshes every 30 seconds as fallback
+- WebSocket issues usually resolve on reconnect
+- Check that `DASHBOARD_STREAM` DO binding is configured
+- If persistent: Redeploy uplink-core
+
+---
+
+### Issue: Need to Export Data
+
+**Export runs:**
+```bash
+curl "https://uplink-core.codyboring.workers.dev/internal/export/runs?format=csv&limit=1000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output runs.csv
+```
+
+**Export entities:**
+```bash
+curl "https://uplink-core.codyboring.workers.dev/internal/export/entities?format=ndjson&limit=1000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output entities.ndjson
+```
+
+**Export errors:**
+```bash
+curl "https://uplink-core.codyboring.workers.dev/internal/export/errors?format=json&limit=1000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output errors.json
+```
+
+---
+
+### Issue: Error Agent Not Responding
+
+**Symptoms:**
+- WebSocket connection to error agent fails
+- No AI diagnosis received
+
+**Investigation:**
+```bash
+# Check if endpoint is accessible
+curl -i "https://uplink-core.codyboring.workers.dev/internal/agent/error" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+```
+
+**Resolution:**
+- Ensure `ERROR_AGENT` DO binding is in wrangler.jsonc
+- Check that v4 migration was applied
+- Verify Workers AI is available in the account
+- If persistent: Redeploy uplink-core
 
 ---
 
@@ -306,6 +396,7 @@ curl -X POST "https://uplink-core.codyboring.workers.dev/internal/sources/{sourc
 - [ ] Queue depth < 1000
 - [ ] Recent runs processing normally
 - [ ] No sources stuck paused
+- [ ] Dashboard loads correctly
 
 ### Weekly (Monday)
 - [ ] Review error rates by source
@@ -313,6 +404,7 @@ curl -X POST "https://uplink-core.codyboring.workers.dev/internal/sources/{sourc
 - [ ] Review retention workflow ran successfully
 - [ ] Check R2 storage growth
 - [ ] Review and acknowledge any lingering warnings
+- [ ] Test WebSocket dashboard connection
 
 ### Monthly
 - [ ] Review all source configs for accuracy
@@ -320,6 +412,7 @@ curl -X POST "https://uplink-core.codyboring.workers.dev/internal/sources/{sourc
 - [ ] Review metrics trends
 - [ ] Update secrets if needed (rotation)
 - [ ] Review and update this runbook
+- [ ] Verify export API works end-to-end
 
 ---
 
@@ -345,6 +438,9 @@ npx wrangler d1 execute uplink-control --remote --command "SELECT s.source_id, s
 
 # Error summary by category
 npx wrangler d1 execute uplink-control --remote --command "SELECT error_category, COUNT(*) as count FROM ingest_errors WHERE created_at > unixepoch() - 86400 GROUP BY error_category ORDER BY count DESC"
+
+# Notification delivery status
+npx wrangler d1 execute uplink-control --remote --command "SELECT provider, status, COUNT(*) as count FROM notification_deliveries WHERE created_at > unixepoch() - 86400 GROUP BY provider, status"
 ```
 
 ### Manual Operations
@@ -363,6 +459,14 @@ curl -X POST "https://uplink-core.codyboring.workers.dev/internal/runs/{runId}/r
 # Acknowledge alert
 curl -X POST "https://uplink-core.codyboring.workers.dev/internal/alerts/{alertId}/acknowledge" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Run alert check
+curl -X POST "https://uplink-core.codyboring.workers.dev/internal/alerts/check" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Check pipeline topology
+curl "https://uplink-core.codyboring.workers.dev/internal/health/topology" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
 ---
@@ -380,5 +484,6 @@ curl -X POST "https://uplink-core.codyboring.workers.dev/internal/alerts/{alertI
 
 ## Change Log
 
+- **2026-04-14 v0.2.1**: Added WebSocket dashboard, RAG error agent, data export API, export commands, error agent troubleshooting
 - **2026-04-13 v0.2.0**: Added BrowserManagerDO, backpressure, structured logging, dashboard endpoint, graceful degradation
 - **2026-04-13 v0.1.0**: Initial production deployment

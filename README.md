@@ -2,7 +2,7 @@
 
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
-[![Tests](https://img.shields.io/badge/tests-500%2B%20passing-success)](./apps/uplink-core/src/test)
+[![Tests](https://img.shields.io/badge/tests-554%2B%20passing-success)](./apps/uplink-core/src/test)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -19,10 +19,14 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Durable execution**: Workflows with automatic retries, leases, and cursor management
 - **Idempotent processing**: Deterministic ingest IDs prevent duplicate data
 - **Real-time observability**: Analytics Engine metrics, health checks, and alerting
-- **Visual dashboard**: Self-hosted HTML dashboard with live pipeline flow and component health
+- **Visual dashboard**: Self-hosted HTML dashboard with live pipeline flow, component health, and WebSocket real-time updates
+- **RAG error agent**: AI-powered error diagnosis using Vectorize and Workers AI
+- **Data export**: Export runs, entities, and errors in JSON, CSV, or NDJSON
 - **Entity resolution**: Automatic deduplication and relationship linking
 - **Data lineage**: Full traceability from raw ingest to normalized entity
 - **Protected operations**: Secure ops API for run management and replay
+- **Universal notifications**: 8 providers including Slack, Discord, PagerDuty, Teams
+- **Code intelligence**: AST-based chunking for TS/JS file ingestion
 
 ## Architecture
 
@@ -35,6 +39,8 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
              |  - /health                                         |
              |  - /v1/intake (authenticated)                     |
              |  - /v1/sources/:id/trigger                        |
+             |  - /v1/webhooks/:id                               |
+             |  - /v1/files/:id (multipart upload)               |
              +---------------------------+-----------------------+
                                          |
                                          v
@@ -45,6 +51,10 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
              |  - Cursor progression                              |
              |  - Rate limiting                                   |
              |  - Failure tracking                                |
+             |  DashboardStreamDO (WebSocket)                     |
+             |  - Real-time metrics streaming                     |
+             |  ErrorAgentDO (WebSocket + AI)                     |
+             |  - RAG-based error diagnosis                       |
              +---------------------------+-----------------------+
                                          |
                      +-------------------+-------------------+
@@ -68,6 +78,9 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
              |  - D1 operational writes                           |
              |  - Entity normalization                            |
              |  - Vectorize indexing                              |
+             |  - Analytics Engine metrics                        |
+             |  - Alert evaluation                                |
+             |  - Settings management                             |
              +---------------------------+-----------------------+
                                          |
            +-----------------------------+------------------------------+
@@ -86,8 +99,8 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 
 | Service | Type | Purpose |
 |---------|------|---------|
-| `uplink-edge` | Public Worker | External intake API, webhook receiver, manual triggers |
-| `uplink-core` | Internal Worker | Queue processing, D1/R2 writes, entity normalization, workflows |
+| `uplink-edge` | Public Worker | External intake API, webhook receiver, manual triggers, file uploads |
+| `uplink-core` | Internal Worker | Queue processing, D1/R2 writes, entity normalization, workflows, 45+ endpoints |
 | `uplink-browser` | Internal Worker | Browser-based collection (fetch-based, Browser Rendering ready) |
 | `uplink-ops` | Protected Worker | Operator API for runs, replay, health checks, alerts |
 
@@ -97,7 +110,7 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 
 - Node.js 20+
 - pnpm 10+
-- Cloudflare account with Workers, D1, R2, Queues, and Workflows enabled
+- Cloudflare account with Workers, D1, R2, Queues, Workflows, Vectorize, Analytics Engine enabled
 
 ### Installation
 
@@ -207,21 +220,31 @@ curl -X POST http://localhost:8787/v1/intake \
 | GET | `/health` | None | Service health check |
 | POST | `/v1/intake` | Bearer | Submit ingest envelope |
 | POST | `/v1/sources/:sourceId/trigger` | Bearer | Trigger source collection |
+| POST | `/v1/webhooks/:sourceId` | None* | Webhook receiver |
+| POST | `/v1/files/:sourceId` | Bearer | Multipart file upload |
+
+*Webhooks use HMAC signature verification
 
 ### Core Internal Endpoints (uplink-core)
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/health` | None | Service health check |
+| GET | `/dashboard` | None | Visual HTML dashboard |
+| GET | `/internal/dashboard/v2` | Internal | Dashboard API v2 |
 | GET | `/internal/runs` | Internal | List ingest runs |
 | GET | `/internal/runs/:runId` | Internal | Get run details |
 | POST | `/internal/runs/:runId/replay` | Internal | Replay failed run |
+| GET | `/internal/runs/:runId/trace` | Internal | Run trace with lineage |
 | GET | `/internal/artifacts/:artifactId` | Internal | Get artifact metadata |
 | GET | `/internal/sources` | Internal | List source configs |
 | POST | `/internal/sources` | Internal | Create/update source |
 | POST | `/internal/sources/:sourceId/trigger` | Internal | Trigger with lease |
 | GET | `/internal/sources/:sourceId/health` | Internal | Source health snapshot |
+| GET | `/internal/sources/:sourceId/health/timeline` | Internal | Health timeline |
+| GET | `/internal/sources/:sourceId/runs/tree` | Internal | Run tree view |
 | POST | `/internal/search/entities` | Internal | Vector similarity search |
+| GET | `/internal/entities/:entityId/lineage` | Internal | Entity lineage |
 | GET | `/internal/alerts` | Internal | List active alerts |
 | POST | `/internal/alerts/check` | Internal | Run alert checks |
 | POST | `/internal/alerts/:id/acknowledge` | Internal | Acknowledge alert |
@@ -233,6 +256,17 @@ curl -X POST http://localhost:8787/v1/intake \
 | GET | `/internal/metrics/entities` | Internal | Entity count metrics |
 | GET | `/internal/errors` | Internal | List ingest errors |
 | POST | `/internal/errors/:id/retry` | Internal | Retry failed operation |
+| GET | `/internal/health/components` | Internal | Component health |
+| GET | `/internal/health/topology` | Internal | Pipeline topology |
+| GET | `/internal/health/flow` | Internal | Data flow metrics |
+| GET | `/internal/settings` | Internal | Platform settings |
+| PUT | `/internal/settings` | Internal | Update settings |
+| GET | `/internal/audit-log` | Internal | Audit trail |
+| GET | `/internal/export/runs` | Internal | Export runs |
+| GET | `/internal/export/entities` | Internal | Export entities |
+| GET | `/internal/export/errors` | Internal | Export errors |
+| GET | `/internal/stream/dashboard` | Internal | WebSocket dashboard stream |
+| GET | `/internal/agent/error` | Internal | WebSocket error agent |
 
 ### Ops Endpoints (uplink-ops)
 
@@ -263,19 +297,23 @@ pnpm test
 
 # Run in watch mode
 pnpm test:watch
+
+# Run live tests against production
+cd apps/uplink-core
+pnpm vitest run --config vitest.live.config.ts
 ```
 
 ### Test Coverage
 
-**500+ tests** across unit, integration, e2e, and live test suites.
+**554+ tests** across unit, integration, e2e, live, worker, and package test suites.
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|
-| **Unit tests** | 261 | lib modules (retry, logging, db, metrics, vectorize, pipelines, auth, alerting, coordinator-client) |
+| **Unit tests** | 274 | lib modules, DOs, notifications, chunking |
 | **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert |
 | **E2E tests** | 6 | Health, dashboard, source registration, ingest/query, replay, browser status |
-| **Worker tests** | 101 | edge (37), ops (32), browser (32) |
-| **Package tests** | 97 | contracts (49), normalizers (19), source-adapters (29) |
+| **Worker tests** | 106 | edge (42), ops (32), browser (32) |
+| **Package tests** | 115 | contracts (49), normalizers (37), source-adapters (29) |
 | **Live tests** | 18 | Production endpoint validation |
 
 #### Integration Test Files
@@ -309,6 +347,10 @@ pnpm test:watch
 | `INGEST_QUEUE` | Auto | Queue producer binding |
 | `DLQ` | Auto | Dead letter queue binding |
 | `SOURCE_COORDINATOR` | Auto | Durable Object namespace |
+| `BROWSER_MANAGER` | Auto | Durable Object namespace |
+| `NOTIFICATION_DISPATCHER` | Auto | Durable Object namespace |
+| `DASHBOARD_STREAM` | Auto | Durable Object namespace |
+| `ERROR_AGENT` | Auto | Durable Object namespace |
 | `COLLECTION_WORKFLOW` | Auto | Workflow binding |
 | `RETENTION_WORKFLOW` | Auto | Workflow binding |
 | `UPLINK_BROWSER` | Auto | Service binding to browser |
@@ -385,6 +427,7 @@ pnpm test:watch
 | `source_configs` | Source registry and configuration |
 | `source_policies` | Rate limits and retry policies |
 | `source_capabilities` | Feature flags per source |
+| `source_runtime_snapshots` | DO state cache |
 | `ingest_runs` | Run tracking and status |
 | `raw_artifacts` | R2 reference tracking |
 | `entities_current` | Canonical entity state |
@@ -395,6 +438,8 @@ pnpm test:watch
 | `retention_audit_log` | Cleanup audit trail |
 | `alerts_active` | Active alerts |
 | `source_metrics_5min` | Aggregated metrics windows |
+| `platform_settings` | Global configuration |
+| `audit_log` | Operator action log |
 
 ### Data Architecture Principles
 
@@ -416,10 +461,9 @@ UplinkConnect/
 ├── packages/
 │   ├── contracts/            # Shared schemas and types
 │   ├── source-adapters/      # Adapter implementations
-│   └── normalizers/          # Entity normalization
+│   └── normalizers/          # Entity normalization + chunking
 ├── scripts/                  # Deployment and utility scripts
 ├── infra/                    # Infrastructure configs
-├── docs/                     # Documentation
 └── migrations/               # Database migrations
 ```
 
@@ -427,10 +471,13 @@ UplinkConnect/
 
 - [API.md](./API.md) - Full endpoint documentation
 - [OPERATIONS.md](./OPERATIONS.md) - Runbooks and procedures
+- [RUNBOOK.md](./RUNBOOK.md) - Daily operations runbook
 - [ROADMAP.md](./ROADMAP.md) - Completed and planned work
 - [CHANGELOG.md](./CHANGELOG.md) - Release notes
 - [METRICS_ALERTING.md](./METRICS_ALERTING.md) - Observability guide
 - [AUDIT_REPORT.md](./AUDIT_REPORT.md) - Comprehensive audit results
+- [PROJECT_STATUS.md](./PROJECT_STATUS.md) - Current project status
+- [AGENTS.md](./AGENTS.md) - Agent instructions
 
 ## Contributing
 

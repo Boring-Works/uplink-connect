@@ -18,21 +18,27 @@ Operational procedures for running Uplink Connect in production.
 
 ```bash
 # 1. Check system health
-curl https://uplink.your-domain.com/health
-curl https://uplink-core.your-domain.com/health
-curl https://uplink-ops.your-domain.com/health
+curl https://uplink-edge.codyboring.workers.dev/health
+curl https://uplink-core.codyboring.workers.dev/health
 
-# 2. Check for active alerts
-curl https://uplink-ops.your-domain.com/v1/alerts \
-  -H "Authorization: Bearer $OPS_API_KEY"
+# 2. Check visual dashboard
+curl https://uplink-core.codyboring.workers.dev/dashboard
 
-# 3. Review queue depth
-curl https://uplink-core.your-domain.com/internal/metrics/queue \
+# 3. Check for active alerts
+curl https://uplink-core.codyboring.workers.dev/internal/alerts \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
-# 4. Check recent failed runs
-curl "https://uplink-ops.your-domain.com/v1/runs?limit=20" \
-  -H "Authorization: Bearer $OPS_API_KEY" | jq '.runs[] | select(.status == "failed")'
+# 4. Review queue depth
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/queue \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# 5. Check recent failed runs
+curl "https://uplink-core.codyboring.workers.dev/internal/runs?limit=20" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" | jq '.runs[] | select(.status == "failed")'
+
+# 6. Check component health
+curl https://uplink-core.codyboring.workers.dev/internal/health/components \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
 ### What to Look For
@@ -49,15 +55,23 @@ curl "https://uplink-ops.your-domain.com/v1/runs?limit=20" \
 
 ```bash
 # 1. Run alert checks to catch any issues
-curl -X POST https://uplink-core.your-domain.com/internal/alerts/check \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/alerts/check \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # 2. Review daily metrics
-curl https://uplink-core.your-domain.com/internal/metrics/system \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/system \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # 3. Check source health summary
-curl https://uplink-core.your-domain.com/internal/metrics/sources?window=86400 \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/sources?window=86400 \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# 4. Review dashboard v2 API
+curl https://uplink-core.codyboring.workers.dev/internal/dashboard/v2 \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# 5. Check pipeline topology
+curl https://uplink-core.codyboring.workers.dev/internal/health/topology \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -75,11 +89,11 @@ curl https://uplink-core.your-domain.com/internal/metrics/sources?window=86400 \
 **Diagnosis:**
 ```bash
 # Check queue metrics
-curl https://uplink-core.your-domain.com/internal/metrics/queue \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/queue \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Check for processing errors
-curl "https://uplink-core.your-domain.com/internal/errors?status=pending&limit=50" \
+curl "https://uplink-core.codyboring.workers.dev/internal/errors?status=pending&limit=50" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -104,11 +118,11 @@ curl "https://uplink-core.your-domain.com/internal/errors?status=pending&limit=5
 **Diagnosis:**
 ```bash
 # Check source health
-curl https://uplink-ops.your-domain.com/v1/sources/SOURCE_ID/health \
+curl https://uplink-core.codyboring.workers.dev/v1/sources/SOURCE_ID/health \
   -H "Authorization: Bearer $OPS_API_KEY"
 
 # Check recent errors for source
-curl "https://uplink-core.your-domain.com/internal/errors?sourceId=SOURCE_ID&limit=20" \
+curl "https://uplink-core.codyboring.workers.dev/internal/errors?sourceId=SOURCE_ID&limit=20" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -154,11 +168,11 @@ HAVING count > 1;
 **Diagnosis:**
 ```bash
 # Check run details
-curl https://uplink-ops.your-domain.com/v1/runs/RUN_ID \
+curl https://uplink-core.codyboring.workers.dev/v1/runs/RUN_ID \
   -H "Authorization: Bearer $OPS_API_KEY"
 
 # Check coordinator state
-curl https://uplink-core.your-domain.com/internal/sources/SOURCE_ID/health \
+curl https://uplink-core.codyboring.workers.dev/internal/sources/SOURCE_ID/health \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -170,7 +184,7 @@ curl https://uplink-core.your-domain.com/internal/sources/SOURCE_ID/health \
 
 ```bash
 # Force trigger
-curl -X POST https://uplink-ops.your-domain.com/v1/sources/SOURCE_ID/trigger \
+curl -X POST https://uplink-core.codyboring.workers.dev/v1/sources/SOURCE_ID/trigger \
   -H "Authorization: Bearer $OPS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"force": true, "triggeredBy": "ops", "reason": "Stuck workflow recovery"}'
@@ -188,7 +202,7 @@ curl -X POST https://uplink-ops.your-domain.com/v1/sources/SOURCE_ID/trigger \
 1. **Tune thresholds:**
 ```bash
 # Update source policy with better thresholds
-curl -X POST https://uplink-core.your-domain.com/internal/sources \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/sources \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -210,7 +224,7 @@ curl -X POST https://uplink-core.your-domain.com/internal/sources \
 
 2. **Acknowledge non-actionable alerts:**
 ```bash
-curl -X POST https://uplink-core.your-domain.com/internal/alerts/ALERT_ID/acknowledge \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/alerts/ALERT_ID/acknowledge \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -232,7 +246,7 @@ Before adding a source, collect:
 ### Step 2: Create Source Configuration
 
 ```bash
-curl -X POST https://uplink-core.your-domain.com/internal/sources \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/sources \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -286,17 +300,17 @@ wrangler secret put SRC_MY_NEW_SOURCE_KEY
 
 ```bash
 # 1. Trigger a test collection
-curl -X POST https://uplink-ops.your-domain.com/v1/sources/my-new-source/trigger \
+curl -X POST https://uplink-core.codyboring.workers.dev/v1/sources/my-new-source/trigger \
   -H "Authorization: Bearer $OPS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"triggeredBy": "setup", "reason": "Initial test"}'
 
 # 2. Monitor the run
-curl https://uplink-ops.your-domain.com/v1/runs/collect:my-new-source:WORKFLOW_ID \
+curl https://uplink-core.codyboring.workers.dev/v1/runs/collect:my-new-source:WORKFLOW_ID \
   -H "Authorization: Bearer $OPS_API_KEY"
 
 # 3. Check source health
-curl https://uplink-ops.your-domain.com/v1/sources/my-new-source/health \
+curl https://uplink-core.codyboring.workers.dev/v1/sources/my-new-source/health \
   -H "Authorization: Bearer $OPS_API_KEY"
 ```
 
@@ -304,7 +318,7 @@ curl https://uplink-ops.your-domain.com/v1/sources/my-new-source/health \
 
 ```bash
 # Check entities were created
-curl -X POST https://uplink-core.your-domain.com/internal/search/entities \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/search/entities \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -314,7 +328,7 @@ curl -X POST https://uplink-core.your-domain.com/internal/search/entities \
   }'
 
 # Verify artifact in R2 (via metadata)
-curl https://uplink-ops.your-domain.com/v1/artifacts/ARTIFACT_ID \
+curl https://uplink-core.codyboring.workers.dev/v1/artifacts/ARTIFACT_ID \
   -H "Authorization: Bearer $OPS_API_KEY"
 ```
 
@@ -322,7 +336,7 @@ curl https://uplink-ops.your-domain.com/v1/artifacts/ARTIFACT_ID \
 
 ```bash
 # Run initial alert check
-curl -X POST "https://uplink-core.your-domain.com/internal/alerts/check?sourceId=my-new-source" \
+curl -X POST "https://uplink-core.codyboring.workers.dev/internal/alerts/check?sourceId=my-new-source" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -350,7 +364,7 @@ curl -X POST "https://uplink-core.your-domain.com/internal/alerts/check?sourceId
 
 ```bash
 # Replay a specific failed run
-curl -X POST https://uplink-ops.your-domain.com/v1/runs/RUN_ID/replay \
+curl -X POST https://uplink-core.codyboring.workers.dev/v1/runs/RUN_ID/replay \
   -H "Authorization: Bearer $OPS_API_KEY"
 
 # Response includes new replay run ID
@@ -360,7 +374,7 @@ curl -X POST https://uplink-ops.your-domain.com/v1/runs/RUN_ID/replay \
 # }
 
 # Monitor the replay
-curl https://uplink-ops.your-domain.com/v1/runs/replay:RUN_ID:uuid \
+curl https://uplink-core.codyboring.workers.dev/v1/runs/replay:RUN_ID:uuid \
   -H "Authorization: Bearer $OPS_API_KEY"
 ```
 
@@ -368,17 +382,17 @@ curl https://uplink-ops.your-domain.com/v1/runs/replay:RUN_ID:uuid \
 
 ```bash
 # List failed errors for a source
-curl "https://uplink-core.your-domain.com/internal/errors?sourceId=SOURCE_ID&status=pending" \
+curl "https://uplink-core.codyboring.workers.dev/internal/errors?sourceId=SOURCE_ID&status=pending" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Retry specific error
-curl -X POST https://uplink-core.your-domain.com/internal/errors/ERROR_ID/retry \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/errors/ERROR_ID/retry \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
   -H "Content-Type: application/json" \
   -d '{"triggeredBy": "ops-team"}'
 
 # Force retry (bypass some checks)
-curl -X POST https://uplink-core.your-domain.com/internal/errors/ERROR_ID/retry \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/errors/ERROR_ID/retry \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
   -H "Content-Type: application/json" \
   -d '{"force": true, "triggeredBy": "ops-team"}'
@@ -395,12 +409,12 @@ API_KEY=$OPS_API_KEY
 CORE_KEY=$CORE_INTERNAL_KEY
 
 # Get failed runs
-curl -s "https://uplink-ops.your-domain.com/v1/runs?limit=100" \
+curl -s "https://uplink-core.codyboring.workers.dev/v1/runs?limit=100" \
   -H "Authorization: Bearer $API_KEY" | \
   jq -r '.runs[] | select(.status == "failed") | .run_id' | \
   while read run_id; do
     echo "Replaying $run_id..."
-    curl -s -X POST "https://uplink-ops.your-domain.com/v1/runs/$run_id/replay" \
+    curl -s -X POST "https://uplink-core.codyboring.workers.dev/v1/runs/$run_id/replay" \
       -H "Authorization: Bearer $API_KEY"
     echo ""
     sleep 1  # Rate limit replays
@@ -413,13 +427,72 @@ curl -s "https://uplink-ops.your-domain.com/v1/runs?limit=100" \
 # Check replay succeeded
 REPLAY_RUN_ID="replay:original-run-id:uuid"
 
-curl https://uplink-ops.your-domain.com/v1/runs/$REPLAY_RUN_ID \
+curl https://uplink-core.codyboring.workers.dev/v1/runs/$REPLAY_RUN_ID \
   -H "Authorization: Bearer $OPS_API_KEY"
 
 # Verify no new errors
-curl "https://uplink-core.your-domain.com/internal/errors?runId=$REPLAY_RUN_ID" \
+curl "https://uplink-core.codyboring.workers.dev/internal/errors?runId=$REPLAY_RUN_ID" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
+
+---
+
+## How to Export Data
+
+Uplink Connect supports exporting runs, entities, and errors in JSON, CSV, or NDJSON formats.
+
+### Export Runs
+
+```bash
+# Export last 1000 runs as CSV
+curl "https://uplink-core.codyboring.workers.dev/internal/export/runs?format=csv&limit=1000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output runs.csv
+
+# Export failed runs for a specific source as NDJSON
+curl "https://uplink-core.codyboring.workers.dev/internal/export/runs?sourceId=SOURCE_ID&status=failed&format=ndjson&limit=5000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output failed-runs.ndjson
+
+# Export runs from a date range as JSON
+curl "https://uplink-core.codyboring.workers.dev/internal/export/runs?startDate=2026-04-01&endDate=2026-04-14&format=json&limit=10000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output runs.json
+```
+
+### Export Entities
+
+```bash
+# Export all entities as CSV
+curl "https://uplink-core.codyboring.workers.dev/internal/export/entities?format=csv&limit=10000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output entities.csv
+
+# Export entities for a specific source
+curl "https://uplink-core.codyboring.workers.dev/internal/export/entities?sourceId=SOURCE_ID&format=ndjson&limit=5000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output source-entities.ndjson
+```
+
+### Export Errors
+
+```bash
+# Export recent errors as JSON
+curl "https://uplink-core.codyboring.workers.dev/internal/export/errors?format=json&limit=1000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output errors.json
+
+# Export errors for a specific source as CSV
+curl "https://uplink-core.codyboring.workers.dev/internal/export/errors?sourceId=SOURCE_ID&format=csv&limit=5000" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
+  --output source-errors.csv
+```
+
+### Export Limits
+
+- **Default limit:** 10,000 records
+- **Maximum limit:** 50,000 records
+- **Formats:** `json` (default), `csv`, `ndjson`
 
 ---
 
@@ -430,24 +503,68 @@ curl "https://uplink-core.your-domain.com/internal/errors?runId=$REPLAY_RUN_ID" 
 #### System Overview
 ```bash
 # Get all key metrics in one call
-curl https://uplink-core.your-domain.com/internal/metrics/system \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/system \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Visual dashboard (no auth required for HTML, API needs internal key)
+curl https://uplink-core.codyboring.workers.dev/dashboard
+curl https://uplink-core.codyboring.workers.dev/internal/dashboard/v2 \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Pipeline topology
+curl https://uplink-core.codyboring.workers.dev/internal/health/topology \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Component health
+curl https://uplink-core.codyboring.workers.dev/internal/health/components \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Data flow metrics
+curl https://uplink-core.codyboring.workers.dev/internal/health/flow \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
 #### Per-Source Health
 ```bash
 # All sources
-curl https://uplink-core.your-domain.com/internal/metrics/sources \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/sources \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Specific source
-curl https://uplink-core.your-domain.com/internal/metrics/sources/SOURCE_ID \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/sources/SOURCE_ID \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Source health timeline
+curl https://uplink-core.codyboring.workers.dev/internal/sources/SOURCE_ID/health/timeline \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Source run tree
+curl https://uplink-core.codyboring.workers.dev/internal/sources/SOURCE_ID/runs/tree \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
 #### Queue Health
 ```bash
-curl https://uplink-core.your-domain.com/internal/metrics/queue \
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/queue \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+```
+
+#### Entity and Error Health
+```bash
+# Entity metrics
+curl https://uplink-core.codyboring.workers.dev/internal/metrics/entities \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Error list
+curl "https://uplink-core.codyboring.workers.dev/internal/errors?limit=20" \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Entity lineage
+curl https://uplink-core.codyboring.workers.dev/internal/entities/ENTITY_ID/lineage \
+  -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
+
+# Run trace
+curl https://uplink-core.codyboring.workers.dev/internal/runs/RUN_ID/trace \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -462,15 +579,27 @@ curl https://uplink-core.your-domain.com/internal/metrics/queue \
 | `run_stuck` | Run in collecting > 1 hour | > 60 min |
 | `lease_expired` | Lease not released properly | Any occurrence |
 
+#### Notification Channels
+
+The alerting system supports 8 notification providers:
+- `webhook` - Generic HTTP webhook
+- `slack` - Slack incoming webhook
+- `discord` - Discord webhook
+- `teams` - Microsoft Teams webhook
+- `pagerduty` - PagerDuty Events API
+- `opsgenie` - OpsGenie alert API
+- `email` - Email via provider
+- `custom` - Custom HTTP endpoint
+
 #### Manual Alert Check
 
 ```bash
 # Check all sources
-curl -X POST https://uplink-core.your-domain.com/internal/alerts/check \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/alerts/check \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Check specific source
-curl -X POST "https://uplink-core.your-domain.com/internal/alerts/check?sourceId=SOURCE_ID" \
+curl -X POST "https://uplink-core.codyboring.workers.dev/internal/alerts/check?sourceId=SOURCE_ID" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 ```
 
@@ -478,15 +607,15 @@ curl -X POST "https://uplink-core.your-domain.com/internal/alerts/check?sourceId
 
 ```bash
 # List active alerts
-curl "https://uplink-core.your-domain.com/internal/alerts?acknowledged=false" \
+curl "https://uplink-core.codyboring.workers.dev/internal/alerts?acknowledged=false" \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Acknowledge (silence notifications)
-curl -X POST https://uplink-core.your-domain.com/internal/alerts/ALERT_ID/acknowledge \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/alerts/ALERT_ID/acknowledge \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
 
 # Resolve (when issue fixed)
-curl -X POST https://uplink-core.your-domain.com/internal/alerts/ALERT_ID/resolve \
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/alerts/ALERT_ID/resolve \
   -H "x-uplink-internal-key: $CORE_INTERNAL_KEY" \
   -H "Content-Type: application/json" \
   -d '{"note": "Fixed by rotating API key"}'
@@ -553,10 +682,10 @@ Create a runbook for each source:
 ### Quick Commands
 ```bash
 # Check health
-curl https://uplink-ops.your-domain.com/v1/sources/SOURCE_ID/health ...
+curl https://uplink-core.codyboring.workers.dev/v1/sources/SOURCE_ID/health ...
 
 # Trigger manually
-curl -X POST https://uplink-ops.your-domain.com/v1/sources/SOURCE_ID/trigger ...
+curl -X POST https://uplink-core.codyboring.workers.dev/v1/sources/SOURCE_ID/trigger ...
 ```
 ```
 

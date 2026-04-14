@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Cloudflare-native data collection and ingestion platform (v0.1.0).
+Cloudflare-native data collection and ingestion platform (v0.1.1).
 
 A production-ready, multi-tenant data ingestion system built entirely on Cloudflare's edge infrastructure. Handles everything from simple webhook intake to complex browser-based collection workflows, with durable execution guarantees and comprehensive observability.
 
@@ -11,13 +11,13 @@ A production-ready, multi-tenant data ingestion system built entirely on Cloudfl
 - **Tier 3** (CF Workers bare)
 - TypeScript 5.8+ with strict mode
 - pnpm 10.6+ workspaces
-- Cloudflare Workers + Durable Objects + Workflows + Queues + D1 + R2 + Analytics Engine + Vectorize
+- Cloudflare Workers + Durable Objects + Workflows + Queues + D1 + R2 + Analytics Engine + Vectorize + Workers AI
 
 ### Service Architecture
 
 ```
-uplink-edge      → Public intake API (webhooks, manual triggers)
-uplink-core      → Queue processing, DO coordination, workflows
+uplink-edge      → Public intake API (webhooks, manual triggers, file uploads)
+uplink-core      → Queue processing, DO coordination, workflows, 45+ endpoints
 uplink-browser   → Browser-based collection
 uplink-ops       → Protected operations API
 ```
@@ -26,38 +26,48 @@ uplink-ops       → Protected operations API
 
 | Tier | Product | Purpose |
 |------|---------|---------|
-| Coordination | Durable Objects | Per-source locks, cursors, rate limits |
-| Operational | D1 | Source configs, runs, entities, errors |
+| Coordination | Durable Objects | Per-source locks, cursors, rate limits, notifications, dashboard streams |
+| Operational | D1 | Source configs, runs, entities, errors, settings, audit log |
 | Immutable | R2 | Raw artifacts, exports |
 | Metrics | Analytics Engine | High-cardinality telemetry |
-| Search | Vectorize | Semantic entity search |
+| Search | Vectorize | Semantic entity search, error similarity |
 | Async | Queues | At-least-once buffering |
 | Orchestration | Workflows | Multi-step collection jobs |
+| AI | Workers AI | Error diagnosis, embeddings |
 
 ## Current State
 
-**Status: Production Ready (v0.1.0)**
+**Status: Production Ready (v0.1.1)**
 
 ### Completed Features
 
 - ✅ Multi-source ingestion (API, webhook, email, file, browser, manual)
-- ✅ Durable Object-based source coordination (leases, cursors, rate limits)
+- ✅ Durable Object-based source coordination (leases, cursors, rate limits, backpressure)
 - ✅ Workflow-driven collection with automatic retries
 - ✅ Queue-based async processing with DLQ
 - ✅ R2 raw artifact storage with structured key paths
-- ✅ D1 operational data store (12 tables, 6 migrations)
-- ✅ Entity normalization and deduplication
+- ✅ D1 operational data store (16 tables, 9 migrations)
+- ✅ Entity normalization, deduplication, and relationship linking
 - ✅ Vectorize semantic search
-- ✅ Comprehensive metrics and alerting
-- ✅ Protected ops API for run management
+- ✅ Comprehensive metrics and alerting with Analytics Engine
+- ✅ Visual HTML dashboard with WebSocket real-time updates
+- ✅ RAG-based error analysis agent via WebSocket
+- ✅ Data export API (JSON, CSV, NDJSON)
+- ✅ Universal notification system (8 providers)
+- ✅ Protected ops API for run management and replay
 - ✅ Run replay capability
 - ✅ Retention workflows
-- ✅ 500+ tests passing (261 unit + 35 integration + 6 e2e + 18 live)
+- ✅ Settings management with audit logging
+- ✅ Source soft-delete and restore
+- ✅ Webhook HMAC signature verification
+- ✅ File upload endpoint with multipart/form-data
+- ✅ AST-based code chunking for TS/JS ingestion
+- ✅ 554+ tests passing (274 unit + 35 integration + 6 e2e + 18 live + 101 worker + 115 package)
 
 ### API Surface
 
-- **uplink-edge**: 3 endpoints (public)
-- **uplink-core**: 25 endpoints (internal)
+- **uplink-edge**: 4 endpoints (public)
+- **uplink-core**: 45+ endpoints (internal)
 - **uplink-ops**: 7 endpoints (protected)
 - **uplink-browser**: 2 endpoints (internal)
 
@@ -67,12 +77,12 @@ uplink-ops       → Protected operations API
 UplinkConnect/
 ├── apps/
 │   ├── uplink-edge/          # Public intake API
-│   │   ├── src/index.ts      # Hono app with /health, /v1/intake, /v1/sources/:id/trigger
+│   │   ├── src/index.ts      # Hono app with /health, /v1/intake, /v1/sources/:id/trigger, /v1/files/:id
 │   │   ├── wrangler.jsonc    # Worker config
 │   │   └── package.json      # @uplink/edge
 │   ├── uplink-core/          # Processing, DO, Workflows
 │   │   ├── src/
-│   │   │   ├── index.ts      # Main worker (fetch + queue handlers)
+│   │   │   ├── index.ts      # Main worker (fetch + queue + scheduled handlers)
 │   │   │   ├── types.ts      # Env types, RuntimeSnapshot
 │   │   │   ├── lib/
 │   │   │   │   ├── auth.ts           # Internal auth middleware
@@ -80,17 +90,23 @@ UplinkConnect/
 │   │   │   │   ├── db.ts             # D1 operations
 │   │   │   │   ├── metrics.ts        # Analytics Engine writes
 │   │   │   │   ├── alerting.ts       # Alert system
+│   │   │   │   ├── health-monitor.ts # Component health checks
+│   │   │   │   ├── settings.ts       # Platform settings
+│   │   │   │   ├── tracing.ts        # Run tracing and lineage
 │   │   │   │   ├── processing.ts     # Queue batch processing
 │   │   │   │   ├── retry.ts          # Retry logic, circuit breakers
 │   │   │   │   ├── vectorize.ts      # Vectorize operations
+│   │   │   │   ├── notifications.ts  # Notification dispatch
 │   │   │   │   └── pipelines.ts      # Pipeline emission (beta)
 │   │   │   ├── durable/
-│   │   │   │   └── source-coordinator.ts  # DO implementation
-│   │   │   ├── workflows/
-│   │   │   │   ├── collection-workflow.ts # Main collection workflow
-│   │   │   │   └── retention-workflow.ts  # Cleanup workflow
-│   │   │   └── test/                 # 500+ tests (unit, integration, e2e, live)
-│   │   ├── migrations/       # 6 SQL migrations
+│   │   │   │   ├── source-coordinator.ts    # DO for per-source coordination
+│   │   │   │   ├── browser-manager.ts       # DO for browser sessions
+│   │   │   │   ├── notification-dispatcher.ts # DO for rate-limited notifications
+│   │   │   │   ├── dashboard-stream.ts      # DO for real-time dashboard
+│   │   │   │   └── error-agent.ts           # DO for RAG error diagnosis
+│   │   │   ├── routes/               # 14 route modules
+│   │   │   └── test/                 # 554+ tests (unit, integration, e2e, live)
+│   │   ├── migrations/       # 9 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
 │   │   └── package.json      # @uplink/core
 │   ├── uplink-browser/       # Browser collection
@@ -103,7 +119,7 @@ UplinkConnect/
 │   ├── source-adapters/      # Adapter implementations
 │   │   └── src/index.ts      # API, webhook, browser adapters
 │   └── normalizers/          # Entity normalization
-│       └── src/index.ts      # Canonical entity mapping
+│       └── src/index.ts      # Canonical entity mapping, code chunking
 ├── scripts/
 │   ├── deploy.sh             # Full deployment automation
 │   ├── bootstrap.sh          # Environment setup
@@ -111,14 +127,15 @@ UplinkConnect/
 ├── infra/
 │   ├── README.md             # Infrastructure docs
 │   └── wrangler.*.template.jsonc  # Config templates
-├── docs/
-│   ├── README.md             # This file
-│   ├── API.md                # Full API documentation
-│   ├── OPERATIONS.md         # Runbooks and procedures
-│   ├── ROADMAP.md            # Completed and planned work
-│   ├── CHANGELOG.md          # Release notes
-│   ├── METRICS_ALERTING.md   # Observability guide
-│   └── AUDIT_REPORT.md       # Comprehensive audit
+├── AGENTS.md                 # Multi-agent context
+├── API.md                    # Full API documentation
+├── OPERATIONS.md             # Runbooks and procedures
+├── RUNBOOK.md                # Daily operations runbook
+├── ROADMAP.md                # Completed and planned work
+├── CHANGELOG.md              # Release notes
+├── METRICS_ALERTING.md       # Observability guide
+├── AUDIT_REPORT.md           # Comprehensive audit results
+├── PROJECT_STATUS.md         # Current project status
 ├── package.json              # Workspace root
 ├── pnpm-workspace.yaml       # pnpm workspace config
 ├── tsconfig.base.json        # Shared TypeScript config
@@ -129,31 +146,37 @@ UplinkConnect/
 
 | File | Purpose |
 |------|---------|
-| `apps/uplink-core/src/index.ts` | Main core worker with 25 endpoints |
+| `apps/uplink-core/src/index.ts` | Main core worker with queue + scheduled handlers |
 | `apps/uplink-core/src/durable/source-coordinator.ts` | DO for per-source coordination |
+| `apps/uplink-core/src/durable/dashboard-stream.ts` | WebSocket DO for live dashboard |
+| `apps/uplink-core/src/durable/error-agent.ts` | RAG-based error diagnosis DO |
 | `apps/uplink-core/src/workflows/collection-workflow.ts` | Durable collection workflow |
 | `apps/uplink-core/src/lib/processing.ts` | Queue batch processing |
 | `apps/uplink-core/src/lib/db.ts` | D1 database operations |
 | `packages/contracts/src/index.ts` | All shared schemas and types |
+| `packages/normalizers/src/index.ts` | Entity normalization + code chunking |
 | `apps/uplink-core/migrations/*.sql` | Database schema |
 
 ## Database Schema (D1)
 
-### Tables (12 total)
+### Tables (16 total)
 
 1. **source_configs** - Source registry
 2. **source_policies** - Rate limits and retry config
 3. **source_capabilities** - Feature flags per source
-4. **ingest_runs** - Run tracking
-5. **raw_artifacts** - R2 reference tracking
-6. **entities_current** - Canonical entity state
-7. **entity_observations** - Historical observations
-8. **entity_links** - Entity relationships
-9. **ingest_errors** - Error tracking with retry state
-10. **retry_idempotency_keys** - Idempotency tracking
-11. **retention_audit_log** - Cleanup audit trail
-12. **alerts_active** - Active alerts
-13. **source_metrics_5min** - Aggregated metrics
+4. **source_runtime_snapshots** - DO state cache
+5. **ingest_runs** - Run tracking
+6. **raw_artifacts** - R2 reference tracking
+7. **entities_current** - Canonical entity state
+8. **entity_observations** - Historical observations
+9. **entity_links** - Entity relationships
+10. **ingest_errors** - Error tracking with retry state
+11. **retry_idempotency_keys** - Idempotency tracking
+12. **retention_audit_log** - Cleanup audit trail
+13. **alerts_active** - Active alerts
+14. **source_metrics_5min** - Aggregated metrics
+15. **platform_settings** - Global configuration
+16. **audit_log** - Operator action log
 
 ### Migrations
 
@@ -163,6 +186,9 @@ UplinkConnect/
 4. `0004_retention_audit.sql` - Audit logging
 5. `0005_alerting_metrics.sql` - Alerts and metrics
 6. `0006_retry_tracking.sql` - Error retry state
+7. `0007_settings_audit.sql` - Settings and audit log
+8. `0008_add_missing_columns.sql` - Schema fixes
+9. `0009_notification_deliveries.sql` - Notification tracking
 
 ## Commands
 
@@ -181,6 +207,10 @@ pnpm test
 
 # Run tests in watch mode
 pnpm test:watch
+
+# Run live tests against production
+cd apps/uplink-core
+pnpm vitest run --config vitest.live.config.ts
 
 # Development (run each in separate terminals)
 pnpm dev:edge
@@ -222,14 +252,15 @@ BROWSER_API_KEY=browser-dev-key
 ## Testing
 
 - **Framework**: Vitest with @cloudflare/vitest-pool-workers
-- **Test Files**: 5 integration test files
-- **Total Tests**: 35 passing
+- **Test Files**: 33+ test files across all workspaces
+- **Total Tests**: 554+ passing
 - **Coverage Areas**:
-  - Source coordinator (lease, cursor, failure tracking)
-  - Workflow execution (trigger, force, concurrent rejection)
-  - Ingest pipeline (full flow, idempotency, errors)
-  - Replay/upsert (guards, conflict resolution)
-  - Retry recovery (message reconstruction)
+  - Unit tests: lib modules, DOs, notifications, chunking
+  - Integration: Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert
+  - E2E: Health, dashboard, source registration, ingest/query, replay, browser status
+  - Live: Production endpoint validation
+  - Worker tests: edge (42), ops (32), browser (32)
+  - Package tests: contracts (49), normalizers (37), source-adapters (29)
 
 ## Deployment
 
@@ -237,7 +268,7 @@ BROWSER_API_KEY=browser-dev-key
 
 - Node.js 20+
 - pnpm 10+
-- Cloudflare account with Workers, D1, R2, Queues, Workflows enabled
+- Cloudflare account with Workers, D1, R2, Queues, Workflows, Vectorize, Analytics Engine enabled
 - wrangler CLI authenticated
 
 ### Deployment Order
@@ -262,6 +293,7 @@ BROWSER_API_KEY=browser-dev-key
 - No secrets in code (use .dev.vars locally, wrangler secrets in prod)
 - Per-source isolation in D1 and R2
 - DO routing by sourceId for serialized access
+- Webhook HMAC signature verification
 
 ## Observability
 
@@ -294,35 +326,6 @@ BROWSER_API_KEY=browser-dev-key
 - No secrets in code or committed config
 - Tab indent, 100 char width
 - Strict TypeScript, no implicit any
-
-## Next Milestones
-
-### Immediate (Post-v0.1.0)
-
-1. Deploy to production
-2. Configure first production sources
-3. Set up monitoring dashboards
-4. Train operations team
-
-### Short-term
-
-1. Add pagination to list endpoints
-2. Implement source soft-delete
-3. Add webhook signature verification
-4. Create source-specific runbooks
-
-### Medium-term
-
-1. Enable Pipelines integration (when beta acceptable)
-2. Add advanced browser collection (CDP)
-3. Implement entity relationship API
-4. Add multi-region support
-
-## Credits
-
-Built with Cloudflare Workers, Durable Objects, Workflows, D1, R2, Queues, Analytics Engine, and Vectorize.
-
-Architecture inspired by PeopleResearch property search workflows, HolstonResearch ingest patterns, and BoringBots platform decomposition.
 
 ## License
 
