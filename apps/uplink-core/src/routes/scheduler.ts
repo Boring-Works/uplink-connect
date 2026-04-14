@@ -45,6 +45,9 @@ app.post("/internal/schedules", async (c) => {
 	if (!cronExpression || typeof cronExpression !== "string") {
 		return c.json({ error: "cronExpression is required" }, 400);
 	}
+	if (!isValidCronExpression(cronExpression)) {
+		return c.json({ error: "Invalid cron expression. Expected 5 fields: * * * * *" }, 400);
+	}
 
 	// Validate source exists
 	const source = await getSourceConfigWithPolicy(c.env.CONTROL_DB, sourceId);
@@ -69,8 +72,13 @@ app.put("/internal/schedules/:scheduleId", async (c) => {
 		return c.json({ error: "Invalid JSON body" }, 400);
 	}
 
+	const cronExpression = (body as { cronExpression?: string }).cronExpression;
+	if (cronExpression !== undefined && !isValidCronExpression(cronExpression)) {
+		return c.json({ error: "Invalid cron expression. Expected 5 fields: * * * * *" }, 400);
+	}
+
 	const schedule = await updateSourceSchedule(c.env.CONTROL_DB, c.req.param("scheduleId"), {
-		cronExpression: (body as { cronExpression?: string }).cronExpression,
+		cronExpression,
 		enabled: (body as { enabled?: boolean }).enabled,
 		label: (body as { label?: string }).label,
 	});
@@ -146,8 +154,14 @@ app.get("/scheduler", async (c) => {
 		status: s.status,
 	}));
 
-	const schedulesJson = JSON.stringify(schedules);
-	const sourcesJson = JSON.stringify(sources);
+	const schedulesJson = JSON.stringify(schedules)
+		.replace(/</g, "\\u003c")
+		.replace(/>/g, "\\u003e")
+		.replace(/\//g, "\\/");
+	const sourcesJson = JSON.stringify(sources)
+		.replace(/</g, "\\u003c")
+		.replace(/>/g, "\\u003e")
+		.replace(/\//g, "\\/");
 
 	const html = renderSchedulerHtml({ schedulesJson, sourcesJson });
 	return c.html(html);
@@ -507,7 +521,7 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 				const src = sources.find(s => s.sourceId === sch.sourceId);
 				const srcName = src ? src.name : sch.sourceId;
 				return '\u003ctr data-index="' + idx + '"\u003e' +
-					'<td\u003e<div style="font-weight:600">' + escapeHtml(srcName) + '</div><div class="mono" style="color:#6B6B6B;font-size:0.85rem">' + sch.sourceId + '</div></td\u003e' +
+					'<td\u003e<div style="font-weight:600">' + escapeHtml(srcName) + '</div><div class="mono" style="color:#6B6B6B;font-size:0.85rem">' + escapeHtml(sch.sourceId) + '</div></td\u003e' +
 					'<td class="mono">' + escapeHtml(sch.cronExpression) + '</td\u003e' +
 					'<td\u003e' + (sch.label ? escapeHtml(sch.label) : '<span style="color:#9A9A9A">—</span>') + '</td\u003e' +
 					'<td\u003e<span class="badge ' + (sch.enabled ? 'badge-enabled' : 'badge-disabled') + '"\u003e' + (sch.enabled ? 'Enabled' : 'Disabled') + '</span></td\u003e' +
@@ -626,6 +640,19 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 	</script>
 </body>
 </html>`;
+}
+
+function isValidCronExpression(cron: string): boolean {
+	// Basic validation for 5-field cron: minute hour day month weekday
+	// Rejects obviously invalid patterns but allows standard cron syntax
+	const parts = cron.trim().split(/\s+/);
+	if (parts.length !== 5) return false;
+	// Reject shell injection or path traversal attempts
+	const forbidden = /[;|&$<>{}[\]\\]/;
+	for (const part of parts) {
+		if (forbidden.test(part)) return false;
+	}
+	return true;
 }
 
 export default app;

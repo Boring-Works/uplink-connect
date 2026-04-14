@@ -68,7 +68,7 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 		`https://uplink-core/internal/sources/${sourceId}`,
 		{
 			headers: {
-				"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY ?? "",
+				"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY || "missing",
 			},
 		},
 	);
@@ -253,7 +253,7 @@ app.post("/v1/sources/:sourceId/trigger", async (c) => {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
-			"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY ?? "",
+			"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY || "missing",
 		},
 		body: JSON.stringify({ ...body, triggeredBy: "edge" }),
 	});

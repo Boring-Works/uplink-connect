@@ -265,7 +265,7 @@ app.get("/dashboard", async (c) => {
 					<div class="source-meta">${src.type} · <span class="${statusClass}">${src.status}</span></div>
 				</div>
 				<div class="source-actions">
-					<button class="btn btn-sm btn-secondary" onclick="triggerSource('${src.source_id}')">Trigger</button>
+					<button class="btn btn-sm btn-secondary" onclick="triggerSource('${escapeHtml(src.source_id)}')">Trigger</button>
 				</div>
 			</div>`;
 		}).join("") || '<div class="empty-state">No sources configured</div>';
@@ -276,9 +276,9 @@ app.get("/dashboard", async (c) => {
 			const time = new Date(run.created_at * 1000).toLocaleString();
 			const shortId = run.run_id.split(':').pop() || run.run_id;
 			return `<tr>
-				<td><div class="mono" title="${run.run_id}">${shortId.slice(0, 14)}...</div></td>
+				<td><div class="mono" title="${escapeHtml(run.run_id)}">${escapeHtml(shortId.slice(0, 14))}...</div></td>
 				<td>${escapeHtml(run.source_name)}</td>
-				<td><span class="badge ${statusClass}">${run.status}</span></td>
+				<td><span class="badge ${statusClass}">${escapeHtml(run.status)}</span></td>
 				<td>${run.record_count}</td>
 				<td class="mono">${time}</td>
 			</tr>`;
@@ -677,7 +677,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				<h1>Uplink Connect</h1>
 				<p>Data Ingestion Platform Dashboard</p>
 			</div>
-			<span class="status-badge status-${p.overallStatus}">${p.overallStatus}</span>
+			<span class="status-badge status-${escapeHtml(p.overallStatus)}">${escapeHtml(p.overallStatus)}</span>
 		</header>
 
 		<div class="nav">
@@ -774,7 +774,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 
 	<script>
 	(function() {
-		const wsUrl = '${p.wsUrl}';
+		const wsUrl = '${escapeHtml(p.wsUrl)}';
 		const statusEl = document.getElementById('ws-status');
 		const toast = document.getElementById('toast');
 		let ws;

@@ -33,7 +33,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **D1 Database** | ✅ Provisioned | 9 migrations applied |
+| **D1 Database** | ✅ Provisioned | 10 migrations applied |
 | **R2 Storage** | ✅ Provisioned | Raw artifacts bucket |
 | **Queues** | ✅ Active | Ingest queue + DLQ |
 | **Vectorize** | ✅ Provisioned | Entity search index |
@@ -152,7 +152,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 ## Database Schema
 
-### 13 Tables (D1)
+### 18 Tables (D1)
 1. `source_configs` - Source registry
 2. `source_policies` - Rate limits and retry config
 3. `source_capabilities` - Feature flags
@@ -169,8 +169,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 14. `source_metrics_5min` - Aggregated metrics windows
 15. `platform_settings` - Global configuration
 16. `audit_log` - Operator action log
+17. `source_schedules` - Cron-driven source schedules
+18. `notification_deliveries` - Notification delivery tracking
 
-### 9 Migrations Applied
+### 10 Migrations Applied
 - 0001_control_schema.sql
 - 0002_source_registry.sql
 - 0003_entity_plane.sql
@@ -180,6 +182,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - 0007_settings_audit.sql
 - 0008_add_missing_columns.sql
 - 0009_notification_deliveries.sql
+- 0010_source_schedules.sql
 
 ---
 
@@ -188,8 +191,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 ### Workers Deployed
 | Worker | Status | Version ID |
 |--------|--------|------------|
-| uplink-core | ✅ Active | a6fe0fb0-6238-492b-b25e-dbffed596727 |
-| uplink-edge | ✅ Active | 5df61d4e-897a-4531-a0a7-52e8a24d2d26 |
+| uplink-core | ✅ Active | v94e394a0-ccaa-4a4c-ba05-aefef98350c5 |
+| uplink-edge | ✅ Active | v870ab72d-a151-4be8-9f1c-00e0e211c666 |
 | uplink-ops | ✅ Active | 6e8eb1b4-3b15-4191-9719-bd34990bb6a2 |
 | uplink-browser | ✅ Active | 4c2da6fa-58ad-48ae-ab5b-89aeb97e3abf |
 
@@ -214,10 +217,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
 | Test Coverage | 554 tests |
-| Migrations | 9 |
+| Migrations | 10 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Last Verified | April 14, 2026 |
-| Documentation | 11 files, ~3,700 lines |
+| Documentation | 11 files, ~3,750 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
 | CI/CD Workflows | 1 (GitHub Actions) |
 | Cron Monitors | 1 (synthetic health checks every 5 min) |
@@ -239,6 +242,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Constant-time auth comparisons across all workers
 - ✅ Real public API data flowing end-to-end
 - ✅ Dynamic scheduler with per-source cron configuration live
+- ✅ XSS mitigated in all HTML dashboard pages
+- ✅ SSRF protection on notification tests
+- ✅ Cron expression validation on schedule APIs
+- ✅ Secure cookie flags for dashboard auth
 
 ---
 
@@ -307,6 +314,16 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 ---
 
 ## Recent Changes (April 14, 2026)
+
+### Security Audit Fixes
+- **Password form submission** changed from GET query param to POST form data
+- **Secure cookie flag** added to dashboard auth cookie for HTTPS deployments
+- **Settings save endpoint** added `POST /settings` so the HTML page works without internal API key
+- **Cron validation** added to `/internal/schedules` to reject invalid or malicious expressions
+- **SSRF protection** on notification test URLs blocks private IPs, localhost, and non-HTTP(S) schemes
+- **XSS fixes** across dashboard and scheduler HTML pages (all user-controlled values escaped)
+- **Export endpoint columns** corrected to match actual D1 schema
+- **Edge worker internal key** fallback changed from empty string to `"missing"` for safer auth comparison
 
 ### Code Quality
 - **Refactored uplink-core**: Split 1,250 line `index.ts` into 14 focused route modules

@@ -70,6 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Setup script: `scripts/setup-public-sources.sh`
   - **Note:** Hard-coded scheduled auto-triggers removed. Manual trigger via API/dashboard until scheduler settings UI is built.
 
+#### Security & Audit Fixes
+- **Dashboard auth** - Password submission changed from GET query param to POST form data
+- **Secure cookies** - Auth cookie now includes `Secure` flag on HTTPS deployments
+- **Settings page save** - Added `POST /settings` endpoint so the HTML settings page works without internal API key header
+- **Cron validation** - Rejects invalid or malicious cron expressions in schedule APIs
+- **SSRF protection** - Notification test URLs block private IPs, localhost, and non-HTTP(S) schemes
+- **XSS mitigation** - All user-controlled values in dashboard and scheduler HTML are properly escaped
+- **Export columns** - Fixed `/internal/export/runs` and `/internal/export/errors` to use actual D1 column names
+- **Edge internal key** - Fallback changed from empty string to `"missing"` for safer constant-time comparison
+
 #### Bug Fixes (P0)
 - Fixed `ingest_queue_status` missing table crash in `DashboardStreamDO`
 - Replaced `setInterval` with DO alarms in `DashboardStreamDO` and `NotificationDispatcher`

@@ -109,11 +109,35 @@ export async function sendNotification(
 /**
  * Test notification channels
  */
+function isAllowedTestUrl(url: string): boolean {
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+		const hostname = parsed.hostname.toLowerCase();
+		// Block localhost and private IPs
+		if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return false;
+		if (/^10\./.test(hostname)) return false;
+		if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)) return false;
+		if (/^192\.168\./.test(hostname)) return false;
+		if (/^169\.254\./.test(hostname)) return false;
+		if (/^0\./.test(hostname)) return false;
+		if (/^fc00:/i.test(hostname)) return false;
+		if (/^fe80:/i.test(hostname)) return false;
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export async function testNotificationChannel(
 	env: Env,
 	channel: "webhook" | "slack" | "discord" | "teams" | "pagerduty" | "opsgenie" | "email" | "custom",
 	testUrl?: string,
 ): Promise<{ success: boolean; error?: string }> {
+	if (testUrl && !isAllowedTestUrl(testUrl)) {
+		return { success: false, error: "Invalid or disallowed URL for test" };
+	}
+
 	const testAlert: Alert = {
 		alertId: "test-alert",
 		alertType: "queue_lag",

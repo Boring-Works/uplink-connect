@@ -1112,6 +1112,34 @@ Update platform settings.
 
 ---
 
+### GET /settings
+
+Password-protected HTML settings page. View and edit platform configuration as JSON. Changes are audited.
+
+**Auth:** Dashboard password cookie (configured via `DASHBOARD_PASSWORD` env or platform settings; default is `wecreate`)
+
+---
+
+### POST /settings
+
+Save settings from the HTML settings page. Proxies to the same logic as `PUT /internal/settings` without requiring the internal API key header.
+
+**Auth:** Dashboard password cookie
+
+**Request Body:** Settings JSON object
+
+**Response:** Updated settings
+
+---
+
+### GET /audit-log
+
+Password-protected HTML audit log page with pagination.
+
+**Auth:** Dashboard password cookie
+
+---
+
 ### GET /internal/audit-log
 
 Get audit trail of operator actions.
@@ -1175,6 +1203,8 @@ Create a new source schedule.
 }
 ```
 
+**Validation:** `cronExpression` must be a valid 5-field cron string. Returns `400` if invalid or contains forbidden characters.
+
 **Response:** `201 Created`
 ```json
 {
@@ -1209,6 +1239,8 @@ Update a schedule.
   "label": "Every 30 min"
 }
 ```
+
+**Validation:** If `cronExpression` is provided, it must be a valid 5-field cron string.
 
 **Response:**
 ```json
@@ -1249,7 +1281,9 @@ Manually trigger the source associated with a schedule.
 
 ### GET /scheduler
 
-HTML scheduler settings page. Allows adding, editing, enabling/disabling, and manually triggering source schedules.
+Password-protected HTML scheduler settings page. Allows adding, editing, enabling/disabling, and manually triggering source schedules.
+
+**Auth:** Dashboard password cookie
 
 ---
 
@@ -1314,6 +1348,22 @@ Export errors in JSON, CSV, or NDJSON format.
 - `limit` - Max records (default: 10000, max: 50000)
 
 **Response:** File download in requested format
+
+---
+
+## Security Notes
+
+### Dashboard Password Protection
+The HTML dashboard pages (`/dashboard`, `/scheduler`, `/settings`, `/audit-log`) are protected by a dashboard password. The password can be set via the `DASHBOARD_PASSWORD` environment variable or in platform settings. If unset, a default password (`wecreate`) is shown on first visit. Authentication uses an HttpOnly cookie with `SameSite=Lax` and `Secure` flag on HTTPS deployments.
+
+### Cron Expression Validation
+Schedule creation and updates validate that `cronExpression` is a standard 5-field cron string and reject forbidden characters (`;|&$<>{}[]\`) to prevent injection.
+
+### SSRF Protection for Notification Tests
+The notification test endpoint blocks URLs with non-HTTP(S) protocols, localhost, and private IP ranges (`10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`, `127.0.0.1`, `::1`, `fc00::`, `fe80::`).
+
+### XSS Mitigation
+All user-controlled values rendered in dashboard and scheduler HTML are escaped. JSON embedded in scheduler pages uses Unicode escapes for `<`, `>`, and `/` to prevent script injection.
 
 ---
 
