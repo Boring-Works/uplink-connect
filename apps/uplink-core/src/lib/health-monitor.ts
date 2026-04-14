@@ -260,23 +260,19 @@ export async function getComponentHealth(env: Env): Promise<ComponentHealth[]> {
 		});
 	}
 
-	// Check Workers AI binding
-	try {
-		const start = Date.now();
-		await env.AI.run("@cf/baai/bge-small-en-v1.5", { text: ["health-check"] });
-		const latency = Date.now() - start;
+	// Check Workers AI binding (presence only, not inference)
+	if (env.AI) {
 		components.push({
 			id: "ai-binding",
 			name: "Workers AI",
 			type: "external",
-			status: latency > 5000 ? "degraded" : "healthy",
+			status: "healthy",
 			lastCheckedAt: now,
-			latencyMs: latency,
 			metadata: {
 				purpose: "Embeddings and LLM inference",
 			},
 		});
-	} catch {
+	} else {
 		components.push({
 			id: "ai-binding",
 			name: "Workers AI",

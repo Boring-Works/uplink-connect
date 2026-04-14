@@ -16,6 +16,7 @@ app.get("/health", async (c) => {
 		service: "uplink-core",
 		status: overall,
 		components: components.map((c) => ({ id: c.id, status: c.status, latencyMs: c.latencyMs })),
+		aiDefined: typeof c.env.AI !== "undefined" && c.env.AI !== null,
 		now: toIsoNow(),
 	});
 });
