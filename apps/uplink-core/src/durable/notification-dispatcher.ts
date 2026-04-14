@@ -20,7 +20,6 @@ interface RetryJob {
 
 const RETRY_INTERVAL_MS = 10_000;
 const MAX_RETRY_QUEUE_SIZE = 1000;
-const ALARM_KEY = "notification_alarm_scheduled";
 
 export class NotificationDispatcher extends DurableObject {
 	private rateLimits: Map<string, RateLimitState> = new Map();
@@ -102,11 +101,20 @@ export class NotificationDispatcher extends DurableObject {
 	}
 
 	async alarm(): Promise<void> {
-		const hadWork = await this.processRetries();
-		if (hadWork || this.retryQueue.length > 0) {
-			await this.ctx.storage.setAlarm(Date.now() + RETRY_INTERVAL_MS);
-		} else {
-			await this.ctx.storage.delete(ALARM_KEY);
+		try {
+			const hadWork = await this.processRetries();
+			if (hadWork || this.retryQueue.length > 0) {
+				await this.ctx.storage.setAlarm(Date.now() + RETRY_INTERVAL_MS);
+			}
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error("[NotificationDispatcher] alarm failed:", message);
+			// Reschedule alarm even on failure so we don't get stuck
+			try {
+				await this.ctx.storage.setAlarm(Date.now() + RETRY_INTERVAL_MS);
+			} catch (alarmErr) {
+				console.error("[NotificationDispatcher] Failed to reschedule alarm:", alarmErr);
+			}
 		}
 	}
 
@@ -119,9 +127,8 @@ export class NotificationDispatcher extends DurableObject {
 	}
 
 	private async ensureAlarm(): Promise<void> {
-		const scheduled = await this.ctx.storage.get<boolean>(ALARM_KEY);
-		if (!scheduled && this.retryQueue.length > 0) {
-			await this.ctx.storage.put(ALARM_KEY, true);
+		const alarm = await this.ctx.storage.getAlarm();
+		if (!alarm && this.retryQueue.length > 0) {
 			await this.ctx.storage.setAlarm(Date.now() + RETRY_INTERVAL_MS);
 		}
 	}

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { timingSafeEqual } from "@uplink/contracts";
 
 type Env = {
 	BROWSER_API_KEY?: string;
@@ -17,6 +18,33 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/health", (c) => c.json({ ok: true, service: "uplink-browser", now: new Date().toISOString() }));
 
+function isAllowedBrowserUrl(urlStr: string): boolean {
+	try {
+		const url = new URL(urlStr);
+		if (url.protocol !== "https:" && url.protocol !== "http:") {
+			return false;
+		}
+		if (url.username || url.password) {
+			return false;
+		}
+		const hostname = url.hostname.toLowerCase();
+		if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+			return false;
+		}
+		// Block private IPv4 ranges
+		if (/^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|127\.|0\.0\.0\.0$)/.test(hostname)) {
+			return false;
+		}
+		// Block IPv6 loopback and link-local
+		if (/^\[?(::1|fe80:|fc00:|fd00:)/i.test(hostname)) {
+			return false;
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 app.post("/internal/collect", async (c) => {
 	if (!c.env.BROWSER_API_KEY) {
 		return c.json({ error: "BROWSER_API_KEY not configured" }, 500);
@@ -33,6 +61,10 @@ app.post("/internal/collect", async (c) => {
 	}
 
 	const { sourceId, url, headers } = parsed.data;
+
+	if (!isAllowedBrowserUrl(url)) {
+		return c.json({ error: "URL not allowed" }, 400);
+	}
 
 	const response = await fetch(url, {
 		method: "GET",
@@ -61,22 +93,6 @@ app.post("/internal/collect", async (c) => {
 		hasMore: false,
 	});
 });
-
-function timingSafeEqual(a: string, b: string): boolean {
-	if (a.length !== b.length) {
-		const dummy = "\0".repeat(a.length);
-		let result = 0;
-		for (let i = 0; i < a.length; i++) {
-			result |= a.charCodeAt(i) ^ dummy.charCodeAt(i);
-		}
-		return result === 0;
-	}
-	let result = 0;
-	for (let i = 0; i < a.length; i++) {
-		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-	}
-	return result === 0;
-}
 
 function isAuthorized(request: Request, apiKey: string): boolean {
 	const authHeader = request.headers.get("authorization");

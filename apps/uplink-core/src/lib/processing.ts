@@ -47,70 +47,87 @@ async function getCircuitBreaker(name: string): Promise<import("./retry").Circui
 	return circuitBreakers.get(name)!;
 }
 
+const MESSAGE_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<never>((_, reject) => {
+			setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+		}),
+	]);
+}
+
 export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env): Promise<void> {
-	for (const message of batch.messages) {
-		let errorId: string | undefined;
+	await Promise.all(
+		batch.messages.map(async (message) => {
+			let errorId: string | undefined;
 
-		try {
-			const parsed = IngestQueueMessageSchema.safeParse(message.body);
-			if (!parsed.success) {
-				// Validation errors are permanent - don't retry
-				errorId = await recordIngestError(env.CONTROL_DB, {
-					phase: "validation",
-					errorCode: "INVALID_MESSAGE",
-					errorMessage: parsed.error.message,
-					payload: safeStringify(message.body),
-					status: "dead_letter",
-				});
+			try {
+				const parsed = IngestQueueMessageSchema.safeParse(message.body);
+				if (!parsed.success) {
+					// Validation errors are permanent - don't retry
+					errorId = await recordIngestError(env.CONTROL_DB, {
+						phase: "validation",
+						errorCode: "INVALID_MESSAGE",
+						errorMessage: parsed.error.message,
+						payload: safeStringify(message.body),
+						status: "dead_letter",
+					});
+					message.ack();
+					return;
+				}
+
+				await withTimeout(
+					handleIngestMessage(env, parsed.data),
+					MESSAGE_TIMEOUT_MS,
+					"handleIngestMessage",
+				);
 				message.ack();
-				continue;
-			}
+			} catch (error) {
+				const fallback = error instanceof Error ? error.message : "Unknown queue processing failure";
+				const classification = classifyError(error);
 
-			await handleIngestMessage(env, parsed.data);
-			message.ack();
-		} catch (error) {
-			const fallback = error instanceof Error ? error.message : "Unknown queue processing failure";
-			const classification = classifyError(error);
+				// Record error with retry tracking
+				if (!errorId) {
+					errorId = await recordIngestError(env.CONTROL_DB, {
+						phase: "processing",
+						errorCode: classification.errorCategory.toUpperCase(),
+						errorMessage: fallback,
+						payload: safeStringify(message.body),
+						status: classification.shouldSendToDlq ? "dead_letter" : "pending",
+						errorCategory: classification.errorCategory,
+					});
+				}
 
-			// Record error with retry tracking
-			if (!errorId) {
-				errorId = await recordIngestError(env.CONTROL_DB, {
-					phase: "processing",
-					errorCode: classification.errorCategory.toUpperCase(),
-					errorMessage: fallback,
-					payload: safeStringify(message.body),
-					status: classification.shouldSendToDlq ? "dead_letter" : "pending",
-					errorCategory: classification.errorCategory,
-				});
+				// Decide whether to retry or send to DLQ
+				if (classification.shouldSendToDlq) {
+					console.warn(`[processQueueBatch] Permanent error, sending to DLQ`, {
+						errorId,
+						category: classification.errorCategory,
+					});
+					await sendToDlq(env, message.body, classification, fallback);
+					message.ack();
+				} else if (message.attempts < 3) {
+					// Let the queue retry
+					console.warn(`[processQueueBatch] Transient error, will retry`, {
+						errorId,
+						attempt: message.attempts,
+						category: classification.errorCategory,
+					});
+					message.retry();
+				} else {
+					// Max retries exceeded, send to DLQ
+					console.error(`[processQueueBatch] Max retries exceeded, sending to DLQ`, {
+						errorId,
+						attempts: message.attempts,
+					});
+					await sendToDlq(env, message.body, classification, fallback);
+					message.ack();
+				}
 			}
-
-			// Decide whether to retry or send to DLQ
-			if (classification.shouldSendToDlq) {
-				console.warn(`[processQueueBatch] Permanent error, sending to DLQ`, {
-					errorId,
-					category: classification.errorCategory,
-				});
-				await sendToDlq(env, message.body, classification, fallback);
-				message.ack();
-			} else if (message.attempts < 3) {
-				// Let the queue retry
-				console.warn(`[processQueueBatch] Transient error, will retry`, {
-					errorId,
-					attempt: message.attempts,
-					category: classification.errorCategory,
-				});
-				message.retry();
-			} else {
-				// Max retries exceeded, send to DLQ
-				console.error(`[processQueueBatch] Max retries exceeded, sending to DLQ`, {
-					errorId,
-					attempts: message.attempts,
-				});
-				await sendToDlq(env, message.body, classification, fallback);
-				message.ack();
-			}
-		}
-	}
+		}),
+	);
 }
 
 export async function handleIngestMessage(env: Env, message: IngestQueueMessage): Promise<void> {

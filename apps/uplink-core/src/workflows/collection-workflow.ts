@@ -8,7 +8,7 @@ import {
 } from "@uplink/contracts";
 import { createSourceAdapter } from "@uplink/source-adapters";
 import type { Env } from "../types";
-import { getCoordinatorStub, recordCoordinatorFailure, recordCoordinatorSuccess } from "../lib/coordinator-client";
+import { getCoordinatorStub, recordCoordinatorFailure, recordCoordinatorSuccess, releaseLease } from "../lib/coordinator-client";
 import { getSourceConfigWithPolicy, setRunStatus, upsertRuntimeSnapshot } from "../lib/db";
 import { writeMetric } from "../lib/metrics";
 
@@ -108,6 +108,17 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 			};
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "Collection workflow failed";
+
+			// Always release lease first so the source isn't locked out
+			try {
+				await releaseLease(coordinator, payload.leaseToken);
+			} catch (releaseError) {
+				console.warn("[CollectionWorkflow] Lease release failed, will expire naturally", {
+					runId,
+					sourceId: payload.sourceId,
+					error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+				});
+			}
 			
 			// Graceful degradation: Always try to record failure, but don't let it break the workflow
 			let failureRecorded = false;

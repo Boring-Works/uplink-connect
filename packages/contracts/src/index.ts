@@ -241,6 +241,26 @@ export function buildRawArtifactKey(envelope: IngestEnvelope): string {
 }
 
 /**
+ * Constant-time string comparison to prevent timing attacks.
+ * Does NOT leak length information.
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+	const encoder = new TextEncoder();
+	const bufA = encoder.encode(a);
+	const bufB = encoder.encode(b);
+	const len = Math.max(bufA.length, bufB.length);
+	const x = new Uint8Array(len);
+	const y = new Uint8Array(len);
+	x.set(bufA);
+	y.set(bufB);
+	let diff = 0;
+	for (let i = 0; i < len; i++) {
+		diff |= x[i] ^ y[i];
+	}
+	return diff === 0 && bufA.length === bufB.length;
+}
+
+/**
  * Verify webhook HMAC signature
  * Supports HMAC-SHA256 and HMAC-SHA512
  */
@@ -264,15 +284,7 @@ export async function verifyWebhookSignature(
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
 
-	// Constant-time comparison to prevent timing attacks
-	if (signature.length !== expectedSignature.length) {
-		return false;
-	}
-	let result = 0;
-	for (let i = 0; i < signature.length; i++) {
-		result |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
-	}
-	return result === 0;
+	return timingSafeEqual(signature, expectedSignature);
 }
 
 /**

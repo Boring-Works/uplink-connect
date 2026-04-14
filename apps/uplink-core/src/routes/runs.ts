@@ -53,7 +53,7 @@ app.post("/internal/runs/:runId/replay", async (c) => {
 	}
 
 	const runStatus = typeof run.status === "string" ? run.status : "unknown";
-	if (["received", "collecting", "enqueued", "persisted"].includes(runStatus)) {
+	if (["received", "collecting", "enqueued", "persisted", "replayed"].includes(runStatus)) {
 		return c.json({ error: `Run ${runId} is still in progress and cannot be replayed` }, 409);
 	}
 

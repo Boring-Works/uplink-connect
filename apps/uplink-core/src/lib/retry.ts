@@ -511,7 +511,7 @@ export function generateIdempotencyKey(context: {
 		hash = hash & hash; // Convert to 32bit integer
 	}
 
-	return `idem_${Math.abs(hash).toString(36)}_${Date.now().toString(36)}`;
+	return `idem_${Math.abs(hash).toString(36)}`;
 }
 
 /**
@@ -524,7 +524,6 @@ export function isDuplicateError(error: unknown): boolean {
 		/duplicate key/i,
 		/already exists/i,
 		/ON CONFLICT/i,
-		/conflict/i,
 	];
 
 	return patterns.some((p) => p.test(message));

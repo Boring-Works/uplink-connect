@@ -345,28 +345,38 @@ export async function setRunStatus(
 		errorMessage?: string;
 	},
 ): Promise<void> {
-	await db.prepare(
-		`UPDATE ingest_runs
-		SET status = ?,
-			normalized_count = COALESCE(?, normalized_count),
-			error_count = COALESCE(?, error_count),
-			artifact_key = COALESCE(?, artifact_key),
-			workflow_instance_id = COALESCE(?, workflow_instance_id),
-			ended_at = COALESCE(?, ended_at),
-			error_message = COALESCE(?, error_message),
-			updated_at = unixepoch()
-		WHERE run_id = ?`,
-	)
-		.bind(
-			status,
-			extra?.normalizedCount ?? null,
-			extra?.errorCount ?? null,
-			extra?.artifactKey ?? null,
-			extra?.workflowInstanceId ?? null,
-			extra?.endedAt ?? null,
-			extra?.errorMessage ?? null,
-			runId,
-		)
+	const sets: string[] = ["status = ?", "updated_at = unixepoch()"];
+	const values: (string | number | null)[] = [status];
+
+	if (extra?.normalizedCount !== undefined) {
+		sets.push("normalized_count = ?");
+		values.push(extra.normalizedCount);
+	}
+	if (extra?.errorCount !== undefined) {
+		sets.push("error_count = ?");
+		values.push(extra.errorCount);
+	}
+	if (extra?.artifactKey !== undefined) {
+		sets.push("artifact_key = ?");
+		values.push(extra.artifactKey);
+	}
+	if (extra?.workflowInstanceId !== undefined) {
+		sets.push("workflow_instance_id = ?");
+		values.push(extra.workflowInstanceId);
+	}
+	if (extra?.endedAt !== undefined) {
+		sets.push("ended_at = ?");
+		values.push(extra.endedAt);
+	}
+	if (extra?.errorMessage !== undefined) {
+		sets.push("error_message = ?");
+		values.push(extra.errorMessage);
+	}
+
+	values.push(runId);
+
+	await db.prepare(`UPDATE ingest_runs SET ${sets.join(", ")} WHERE run_id = ?`)
+		.bind(...values)
 		.run();
 }
 
@@ -707,6 +717,16 @@ export async function upsertRuntimeSnapshot(db: D1Database, snapshot: RuntimeSna
 		.run();
 }
 
+const D1_BATCH_SIZE = 90; // D1 hard limit is 100; stay well under it
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let i = 0; i < arr.length; i += size) {
+		chunks.push(arr.slice(i, i + size));
+	}
+	return chunks;
+}
+
 export async function upsertNormalizedEntities(
 	db: D1Database,
 	runId: string,
@@ -760,7 +780,10 @@ export async function upsertNormalizedEntities(
 	}
 
 	if (typeof db.batch === "function") {
-		await db.batch(statements);
+		const chunks = chunkArray(statements, D1_BATCH_SIZE);
+		for (const chunk of chunks) {
+			await db.batch(chunk);
+		}
 	} else {
 		// Fallback for environments without batch support (e.g., test mocks)
 		for (const stmt of statements) {

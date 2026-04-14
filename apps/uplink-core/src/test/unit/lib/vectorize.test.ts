@@ -45,7 +45,7 @@ describe("vectorize", () => {
 			const env = { AI: mockAi };
 			const result = await generateEmbedding(env, "test text");
 			expect(result).toEqual([0.1, 0.2, 0.3]);
-			expect(mockAi.run).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: ["test text"] });
+			expect(mockAi.run).toHaveBeenCalledWith("@cf/baai/bge-small-en-v1.5", { text: ["test text"] });
 		});
 
 		it("returns embedding from object response with data property", async () => {

@@ -4,6 +4,7 @@ import {
 	createIngestQueueMessage,
 	toIsoNow,
 	verifyWebhookSignature,
+	timingSafeEqual,
 	type IngestEnvelope,
 } from "@uplink/contracts";
 
@@ -68,7 +69,7 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 		`https://uplink-core/internal/sources/${sourceId}`,
 		{
 			headers: {
-				"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY || "missing",
+				"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY ?? "",
 			},
 		},
 	);
@@ -279,22 +280,6 @@ function ensureDefaults(payload: unknown): IngestEnvelope {
 		externalRequestId: incoming.externalRequestId,
 		metadata: incoming.metadata,
 	};
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-	if (a.length !== b.length) {
-		const dummy = "\0".repeat(a.length);
-		let result = 0;
-		for (let i = 0; i < a.length; i++) {
-			result |= a.charCodeAt(i) ^ dummy.charCodeAt(i);
-		}
-		return result === 0;
-	}
-	let result = 0;
-	for (let i = 0; i < a.length; i++) {
-		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-	}
-	return result === 0;
 }
 
 function isAuthorized(request: Request, apiKey: string): boolean {

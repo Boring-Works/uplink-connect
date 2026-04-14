@@ -19,7 +19,7 @@ export interface SearchResult {
 
 /**
  * Generate embeddings for a text using Workers AI BGE model.
- * Uses @cf/baai/bge-base-en-v1.5 (768 dimensions).
+ * Uses @cf/baai/bge-small-en-v1.5 (384 dimensions).
  */
 export async function generateEmbedding(
 	env: { AI: Ai },
@@ -28,7 +28,7 @@ export async function generateEmbedding(
 	if (!env.AI) {
 		throw new Error("AI binding not available");
 	}
-	const response = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
+	const response = await env.AI.run("@cf/baai/bge-small-en-v1.5", {
 		text: [text],
 	});
 
@@ -195,7 +195,14 @@ export async function upsertEntityVectors(
 	}
 
 	if (vectors.length > 0) {
-		await env.ENTITY_INDEX.upsert(vectors);
+		const VECTORIZE_BATCH_SIZE = 100;
+		const chunks = [];
+		for (let i = 0; i < vectors.length; i += VECTORIZE_BATCH_SIZE) {
+			chunks.push(vectors.slice(i, i + VECTORIZE_BATCH_SIZE));
+		}
+		for (const chunk of chunks) {
+			await env.ENTITY_INDEX.upsert(chunk);
+		}
 	}
 }
 

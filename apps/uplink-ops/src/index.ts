@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { timingSafeEqual } from "@uplink/contracts";
 
 type Env = {
 	UPLINK_CORE: Fetcher;
@@ -9,22 +10,6 @@ type Env = {
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/health", (c) => c.json({ ok: true, service: "uplink-ops", now: new Date().toISOString() }));
-
-function timingSafeEqual(a: string, b: string): boolean {
-	if (a.length !== b.length) {
-		const dummy = "\0".repeat(a.length);
-		let result = 0;
-		for (let i = 0; i < a.length; i++) {
-			result |= a.charCodeAt(i) ^ dummy.charCodeAt(i);
-		}
-		return result === 0;
-	}
-	let result = 0;
-	for (let i = 0; i < a.length; i++) {
-		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-	}
-	return result === 0;
-}
 
 app.use("/v1/*", async (c, next) => {
 	if (!c.env.OPS_API_KEY) {

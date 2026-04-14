@@ -3,6 +3,34 @@ import { timingSafeEqual } from "./auth";
 
 const PASSWORD_COOKIE_NAME = "uplink_dashboard_auth";
 
+async function signToken(passwordHash: string, timestamp: number): Promise<string> {
+	const encoder = new TextEncoder();
+	const data = encoder.encode(`${passwordHash}:${timestamp}`);
+	const key = await crypto.subtle.importKey(
+		"raw",
+		encoder.encode(passwordHash.slice(0, 32)),
+		{ name: "HMAC", hash: "SHA-256" },
+		false,
+		["sign"],
+	);
+	const sig = await crypto.subtle.sign("HMAC", key, data);
+	const sigHex = Array.from(new Uint8Array(sig))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+	return `${timestamp}:${sigHex}`;
+}
+
+async function verifyToken(token: string, passwordHash: string): Promise<boolean> {
+	const parts = token.split(":");
+	if (parts.length !== 2) return false;
+	const timestamp = Number.parseInt(parts[0], 10);
+	if (!Number.isFinite(timestamp)) return false;
+	// Token valid for 24 hours
+	if (Date.now() - timestamp > 24 * 60 * 60 * 1000) return false;
+	const expected = await signToken(passwordHash, timestamp);
+	return timingSafeEqual(token, expected);
+}
+
 /**
  * Generate a simple hash from password for storage comparison.
  * NOTE: This is not bcrypt-level security, but sufficient for a dashboard gate
@@ -67,8 +95,7 @@ export async function ensureDashboardAuth(
 	const authCookie = cookies[PASSWORD_COOKIE_NAME];
 
 	if (authCookie) {
-		const cookieHash = await hashPassword(authCookie);
-		if (timingSafeEqual(cookieHash, hash)) {
+		if (await verifyToken(authCookie, hash)) {
 			return null;
 		}
 	}
@@ -82,11 +109,12 @@ export async function ensureDashboardAuth(
 			if (submittedPassword) {
 				const submittedHash = await hashPassword(submittedPassword);
 				if (timingSafeEqual(submittedHash, hash)) {
-					// Set cookie and redirect
+					// Set signed token cookie and redirect
+					const token = await signToken(hash, Date.now());
 					const headers = new Headers();
 					headers.set(
 						"Set-Cookie",
-						`${PASSWORD_COOKIE_NAME}=${submittedPassword}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${request.url.startsWith("https:") ? "; Secure" : ""}`,
+						`${PASSWORD_COOKIE_NAME}=${token}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${request.url.startsWith("https:") ? "; Secure" : ""}`,
 					);
 					headers.set("Location", options.returnPath);
 					return new Response(null, { status: 302, headers });

@@ -273,6 +273,31 @@ export class NWSSourceAdapter implements SourceAdapter {
 	}
 }
 
+function isAllowedBrowserUrl(urlStr: string): boolean {
+	try {
+		const url = new URL(urlStr);
+		if (url.protocol !== "https:" && url.protocol !== "http:") {
+			return false;
+		}
+		if (url.username || url.password) {
+			return false;
+		}
+		const hostname = url.hostname.toLowerCase();
+		if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+			return false;
+		}
+		if (/^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|127\.|0\.0\.0\.0$)/.test(hostname)) {
+			return false;
+		}
+		if (/^\[?(::1|fe80:|fc00:|fd00:)/i.test(hostname)) {
+			return false;
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export class BrowserSourceAdapter implements SourceAdapter {
 	type: SourceType = "browser";
 
@@ -280,6 +305,10 @@ export class BrowserSourceAdapter implements SourceAdapter {
 		const parsed = SourceRuntimeConfigSchema.parse(config);
 		if (!parsed.endpointUrl) {
 			throw new Error(`Source ${parsed.sourceId} is missing endpointUrl`);
+		}
+
+		if (!isAllowedBrowserUrl(parsed.endpointUrl)) {
+			throw new Error(`Source ${parsed.sourceId} endpointUrl is not allowed`);
 		}
 
 		if (!context.browserFetcher) {
