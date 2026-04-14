@@ -585,142 +585,258 @@ export function extractFirstJsonObject(text: string): unknown | undefined {
 }
 
 // ============================================================================
-// Secret Sanitization (from promptfoo patterns)
+// Secret Sanitization (from promptfoo patterns — expanded)
 // ============================================================================
 
+const REDACTED = "[REDACTED]";
+const SANITIZE_MAX_DEPTH = 4;
+const DUMMY_BASE = "http://placeholder";
+
+/**
+ * Set of field names that should be redacted (case-insensitive, with hyphens/underscores normalized)
+ * Note: Keys are stored in their normalized form (lowercase, no hyphens/underscores)
+ */
 const SECRET_FIELD_NAMES = new Set([
-	"api_key",
-	"api-key",
-	"apikey",
-	"auth_token",
-	"auth-token",
-	"authtoken",
-	"token",
-	"secret",
-	"secret_key",
-	"secret-key",
-	"secretkey",
-	"private_key",
-	"private-key",
-	"privatekey",
+	// Password variants
 	"password",
 	"passwd",
 	"pwd",
-	"credential",
+	// Secret variants
+	"secret",
+	"secrets",
+	"secretkey",
 	"credentials",
-	"access_key",
-	"access-key",
-	"accesskey",
-	"session_token",
-	"session-token",
-	"sessiontoken",
-	"bearer",
+	// API keys and tokens
+	"apikey",
+	"apisecret",
+	"token",
+	"accesstoken",
+	"refreshtoken",
+	"idtoken",
+	"bearertoken",
+	"authtoken",
+	"clientsecret",
+	"webhooksecret",
 	"authorization",
-	"x-api-key",
-	"x-auth-token",
-	"ingest_api_key",
-	"core_internal_key",
-	"browser_api_key",
-	"ops_api_key",
-	"dashboard_password",
-	"slack_webhook_url",
-	"webhook_url",
-	"webhookUrl",
-	"routingKey",
-	"apiKey",
+	"auth",
+	"bearer",
+	"apikeyenvar",
+	// Header-specific patterns (normalized: hyphens removed)
+	"xapikey", // x-api-key
+	"xauthtoken", // x-auth-token
+	"xaccesstoken", // x-access-token
+	"xauth", // x-auth
+	"xsecret", // x-secret
+	"xcsrftoken", // x-csrf-token
+	"xsessiondata", // x-session-data
+	"csrftoken", // csrf-token
+	"sessionid", // session-id
+	"session", // session
+	"cookie",
+	"setcookie", // set-cookie
+	// Certificate and encryption
+	"certificatepassword",
+	"keystorepassword",
+	"pfxpassword",
+	"privatekey",
+	"certkey",
+	"encryptionkey",
+	"signingkey",
+	"signature",
+	"sig",
+	"passphrase",
+	"certificatecontent",
+	"keystorecontent",
+	"pfx",
+	"pfxcontent",
+	"keycontent",
+	"certcontent",
+	// Uplink-specific
+	"ingestapikey",
+	"coreinternalkey",
+	"browserapikey",
+	"opsapikey",
+	"dashboardpassword",
+	"slackwebhookurl",
+	"webhookurl",
+	"webhookurl",
+	"routingkey",
 ]);
 
-const SECRET_VALUE_PATTERNS = [
-	// AWS keys
-	/AKIA[0-9A-Z]{16}/,
-	// Generic high-entropy tokens
-	/\b[br]ey_[a-zA-Z0-9_-]{20,}\b/,
-	/\bsk-[a-zA-Z0-9]{20,}\b/,
-	/\b[a-zA-Z0-9_-]*_[a-zA-Z0-9_-]{20,}\b/,
-	// Basic auth in URLs
-	/:\/\/[^\s@]+:[^\s@]+@/,
-];
+function normalizeFieldName(fieldName: string): string {
+	return fieldName.toLowerCase().replace(/[-_]/g, "");
+}
 
-function looksLikeSecretValue(value: string): boolean {
-	return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+function isSecretField(fieldName: string): boolean {
+	return SECRET_FIELD_NAMES.has(normalizeFieldName(fieldName));
+}
+
+/**
+ * Check if a value looks like a secret based on common patterns.
+ */
+export function looksLikeSecret(value: string): boolean {
+	if (typeof value !== "string") return false;
+
+	// OpenAI API keys (sk-...)
+	if (/^sk-[a-zA-Z0-9-_]{20,}/.test(value)) return true;
+	// OpenAI project keys (sk-proj-...)
+	if (/^sk-proj-[a-zA-Z0-9-_]{20,}/.test(value)) return true;
+	// Anthropic keys (sk-ant-...)
+	if (/^sk-ant-[a-zA-Z0-9-_]{20,}/.test(value)) return true;
+	// Generic API key patterns (key-...)
+	if (/^key-[a-zA-Z0-9]{20,}/.test(value)) return true;
+	// Bearer tokens
+	if (/^Bearer\s+.{20,}/i.test(value)) return true;
+	// Basic auth
+	if (/^Basic\s+.{20,}/i.test(value)) return true;
+	// Long base64-like strings (likely tokens/keys) - 64+ chars
+	if (/^[a-zA-Z0-9+/=_-]{64,}$/.test(value)) return true;
+	// AWS-style access keys (AKIA...)
+	if (/^AKIA[A-Z0-9]{16}/.test(value)) return true;
+	// Google API keys (AIza...)
+	if (/^AIza[a-zA-Z0-9_-]{35}/.test(value)) return true;
+
+	return false;
+}
+
+function isClassInstance(obj: object): boolean {
+	const proto = Object.getPrototypeOf(obj);
+	if (!proto || proto === Object.prototype) return false;
+	return Object.getOwnPropertyNames(proto).some(
+		(prop) => prop !== "constructor" && typeof (proto as Record<string, unknown>)[prop] === "function",
+	);
 }
 
 function redactValue(value: string): string {
-	if (value.length <= 8) {
-		return "***";
-	}
+	if (value.length <= 8) return "***";
 	return `${value.slice(0, 3)}***${value.slice(-3)}`;
 }
 
-/**
- * Recursively sanitize an object by redacting known secret fields and values.
- * Operates on a deep clone to avoid mutating the original.
- */
-export function sanitizeObject<T>(obj: T, maxDepth = 10): T {
-	if (maxDepth <= 0) {
-		return "[MaxDepth]" as unknown as T;
+function sanitizeJsonString(str: string, depth: number, maxDepth: number): string {
+	try {
+		const parsed = JSON.parse(str);
+		if (parsed && typeof parsed === "object") {
+			const sanitized = recursiveSanitize(parsed, depth, maxDepth);
+			return safeJsonStringify(sanitized);
+		}
+	} catch {
+		if (looksLikeSecret(str)) return REDACTED;
 	}
+	return str;
+}
 
-	if (obj === null || obj === undefined) {
-		return obj;
+function sanitizePlainObject(obj: Record<string, unknown>, depth: number, maxDepth: number): unknown {
+	const sanitized: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(obj)) {
+		if (key === "url" && typeof value === "string") {
+			sanitized[key] = sanitizeUrl(value);
+		} else if (isSecretField(key)) {
+			sanitized[key] = REDACTED;
+		} else if (typeof value === "string" && looksLikeSecret(value)) {
+			sanitized[key] = REDACTED;
+		} else {
+			sanitized[key] = recursiveSanitize(value, depth + 1, maxDepth);
+		}
 	}
+	return sanitized;
+}
 
+function recursiveSanitize(obj: unknown, depth = 0, maxDepth = SANITIZE_MAX_DEPTH): unknown {
+	if (typeof obj === "function") {
+		return `[Function] ${obj.name}`;
+	}
 	if (typeof obj === "string") {
-		if (looksLikeSecretValue(obj)) {
-			return redactValue(obj) as unknown as T;
-		}
+		return sanitizeJsonString(obj, depth, maxDepth);
+	}
+	if (obj === null || obj === undefined || typeof obj !== "object") {
 		return obj;
 	}
-
-	if (typeof obj === "number" || typeof obj === "boolean") {
-		return obj;
+	if (depth > maxDepth) {
+		return "[...]";
 	}
-
-	if (obj instanceof Date) {
-		return new Date(obj.getTime()) as unknown as T;
-	}
-
 	if (Array.isArray(obj)) {
-		return obj.map((item) => sanitizeObject(item, maxDepth - 1)) as unknown as T;
+		return obj.map((item) => recursiveSanitize(item, depth + 1, maxDepth));
 	}
-
-	if (typeof obj === "object") {
-		const result: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(obj)) {
-			const lowerKey = key.toLowerCase();
-			if (SECRET_FIELD_NAMES.has(key) || SECRET_FIELD_NAMES.has(lowerKey)) {
-				if (typeof value === "string") {
-					result[key] = redactValue(value);
-				} else if (typeof value === "number" || typeof value === "boolean") {
-					result[key] = "***";
-				} else if (value && typeof value === "object") {
-					result[key] = "[Redacted]";
-				} else {
-					result[key] = value;
-				}
-			} else {
-				result[key] = sanitizeObject(value, maxDepth - 1);
-			}
-		}
-		return result as T;
+	if (isClassInstance(obj)) {
+		const constructorName = (obj.constructor?.name) || "Object";
+		return `[${constructorName} Instance]`;
 	}
-
-	return obj;
+	return sanitizePlainObject(obj as Record<string, unknown>, depth, maxDepth);
 }
 
 /**
- * Sanitize a URL by redacting any username:password credentials.
+ * Generic function to sanitize any object by removing or redacting sensitive information.
+ * @param obj - The object to sanitize
+ * @param options - Optional configuration
+ * @returns A sanitized copy of the object with secrets redacted
+ */
+export function sanitizeObject<T>(
+	obj: T,
+	options: {
+		context?: string;
+		throwOnError?: boolean;
+		maxDepth?: number;
+	} = {},
+): T {
+	const { context = "object", throwOnError = false, maxDepth = SANITIZE_MAX_DEPTH } = options;
+
+	try {
+		if (obj === null || obj === undefined) return obj;
+		if (typeof obj === "string") return sanitizeJsonString(obj, 0, maxDepth) as unknown as T;
+		if (typeof obj !== "object") return obj;
+
+		// Handle circular references via safeJsonStringify + parse
+		const safeObj = safeJsonParse(safeJsonStringify(obj)) ?? obj;
+		return recursiveSanitize(safeObj, 0, maxDepth) as T;
+	} catch (error) {
+		if (throwOnError) throw error;
+		console.error(`Error sanitizing ${context}:`, error);
+		return obj;
+	}
+}
+
+// Legacy exports for backward compatibility
+export const sanitizeBody = sanitizeObject;
+export const sanitizeHeaders = sanitizeObject;
+export const sanitizeQueryParams = sanitizeObject;
+
+/**
+ * Sanitize a URL by redacting any username:password credentials
+ * and sensitive query parameters.
  */
 export function sanitizeUrl(url: string): string {
 	try {
-		const parsed = new URL(url);
-		if (parsed.password || parsed.username) {
-			parsed.password = "";
-			parsed.username = "";
-			return parsed.toString();
+		if (typeof url !== "string" || !url.trim()) return url;
+
+		// Skip template URLs (e.g., {{ variable }})
+		if (url.includes("{{") && url.includes("}}")) return url;
+
+		// Handle path-only URLs
+		const isPathOnly = url.startsWith("/") && !url.startsWith("//");
+		const parsedUrl = isPathOnly ? new URL(url, DUMMY_BASE) : new URL(url);
+		const sanitizedUrl = new URL(parsedUrl.href);
+
+		if (sanitizedUrl.username || sanitizedUrl.password) {
+			sanitizedUrl.username = "***";
+			sanitizedUrl.password = "***";
 		}
-		return url;
-	} catch {
+
+		// Sanitize sensitive query parameters
+		const sensitiveParams =
+			/(api[_-]?key|token|password|secret|signature|sig|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization)/i;
+
+		for (const key of Array.from(sanitizedUrl.searchParams.keys())) {
+			if (sensitiveParams.test(key)) {
+				sanitizedUrl.searchParams.set(key, REDACTED);
+			}
+		}
+
+		if (isPathOnly) {
+			return sanitizedUrl.pathname + sanitizedUrl.search + sanitizedUrl.hash;
+		}
+		return sanitizedUrl.toString();
+	} catch (error) {
+		console.warn(`Failed to sanitize URL ${url}:`, error);
 		return url;
 	}
 }
@@ -817,4 +933,432 @@ export function shouldRetryHttpError(status: number, error?: unknown): boolean {
 	if (error && isTransientConnectionError(error)) return true;
 	// Default: retry unknown statuses once
 	return true;
+}
+
+// ============================================================================
+// Rate Limit Header Parsing (from promptfoo patterns)
+// ============================================================================
+
+export interface ParsedRateLimitHeaders {
+	remainingRequests?: number;
+	remainingTokens?: number;
+	limitRequests?: number;
+	limitTokens?: number;
+	resetAt?: number; // Absolute Unix timestamp in milliseconds
+	retryAfterMs?: number; // Relative duration in milliseconds
+}
+
+const OPENAI_HEADERS = {
+	remainingRequests: "x-ratelimit-remaining-requests",
+	remainingTokens: "x-ratelimit-remaining-tokens",
+	limitRequests: "x-ratelimit-limit-requests",
+	limitTokens: "x-ratelimit-limit-tokens",
+	resetRequests: "x-ratelimit-reset-requests",
+	resetTokens: "x-ratelimit-reset-tokens",
+} as const;
+
+const ANTHROPIC_HEADERS = {
+	remainingRequests: "anthropic-ratelimit-requests-remaining",
+	remainingTokens: "anthropic-ratelimit-tokens-remaining",
+	limitRequests: "anthropic-ratelimit-requests-limit",
+	limitTokens: "anthropic-ratelimit-tokens-limit",
+	reset: "anthropic-ratelimit-requests-reset",
+} as const;
+
+const STANDARD_HEADERS = {
+	remaining: "ratelimit-remaining",
+	limit: "ratelimit-limit",
+	reset: "ratelimit-reset",
+	remainingAlt: "x-ratelimit-remaining",
+	limitAlt: "x-ratelimit-limit",
+	resetAlt: "x-ratelimit-reset",
+} as const;
+
+function lowercaseKeys(obj: Record<string, string>): Record<string, string> {
+	const result: Record<string, string> = {};
+	for (const [key, value] of Object.entries(obj)) {
+		result[key.toLowerCase()] = value;
+	}
+	return result;
+}
+
+function parseFirstMatch(headers: Record<string, string>, names: string[]): number | undefined {
+	for (const name of names) {
+		const value = headers[name];
+		if (value !== undefined) {
+			const num = Number.parseInt(value, 10);
+			if (!Number.isNaN(num) && num >= 0) {
+				return num;
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Parse HTTP-date format (RFC 7231).
+ */
+function parseHttpDate(value: string): number | null {
+	const timestamp = Date.parse(value);
+	if (!Number.isNaN(timestamp)) {
+		const now = Date.now();
+		const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+		if (timestamp > now - oneYearMs && timestamp < now + oneYearMs) {
+			return timestamp;
+		}
+	}
+	return null;
+}
+
+/**
+ * Parse duration strings like "1s", "100ms", "1m30s", "1h30s", "2h15m30s".
+ */
+export function parseDuration(value: string): number | null {
+	const match = value.match(/^(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)(ms|s))?$/);
+	if (!match) return null;
+	const [, hours, minutes, secondsValue, secondsUnit] = match;
+	if (!hours && !minutes && !secondsValue) return null;
+
+	let ms = 0;
+	if (hours) ms += Number.parseInt(hours, 10) * 3600_000;
+	if (minutes) ms += Number.parseInt(minutes, 10) * 60_000;
+	if (secondsValue) {
+		const num = Number.parseFloat(secondsValue);
+		ms += secondsUnit === "ms" ? num : num * 1000;
+	}
+	return ms;
+}
+
+function parseResetTime(value: string): number | null {
+	const durationMs = parseDuration(value);
+	if (durationMs !== null) return Date.now() + durationMs;
+
+	const num = Number.parseFloat(value);
+	if (!Number.isNaN(num)) {
+		if (num < 1_000_000_000) return Date.now() + num * 1000;
+		if (num < 10_000_000_000) return num * 1000;
+		return num;
+	}
+
+	const httpDate = parseHttpDate(value);
+	if (httpDate !== null) return httpDate;
+	return null;
+}
+
+/**
+ * Parse Retry-After header value.
+ * Returns duration in milliseconds.
+ */
+export function parseRetryAfter(value: string): number | null {
+	const seconds = Number.parseInt(value, 10);
+	if (!Number.isNaN(seconds) && seconds >= 0 && String(seconds) === value.trim()) {
+		return seconds * 1000;
+	}
+	const httpDate = parseHttpDate(value);
+	if (httpDate !== null) return Math.max(0, httpDate - Date.now());
+	return null;
+}
+
+/**
+ * Parse rate limit headers from response.
+ */
+export function parseRateLimitHeaders(headers: Record<string, string>): ParsedRateLimitHeaders {
+	const result: ParsedRateLimitHeaders = {};
+	const h = lowercaseKeys(headers);
+
+	result.remainingRequests = parseFirstMatch(h, [
+		OPENAI_HEADERS.remainingRequests,
+		ANTHROPIC_HEADERS.remainingRequests,
+		STANDARD_HEADERS.remainingAlt,
+		STANDARD_HEADERS.remaining,
+	]);
+
+	result.remainingTokens = parseFirstMatch(h, [
+		OPENAI_HEADERS.remainingTokens,
+		ANTHROPIC_HEADERS.remainingTokens,
+	]);
+
+	result.limitRequests = parseFirstMatch(h, [
+		OPENAI_HEADERS.limitRequests,
+		ANTHROPIC_HEADERS.limitRequests,
+		STANDARD_HEADERS.limitAlt,
+		STANDARD_HEADERS.limit,
+	]);
+
+	result.limitTokens = parseFirstMatch(h, [
+		OPENAI_HEADERS.limitTokens,
+		ANTHROPIC_HEADERS.limitTokens,
+	]);
+
+	for (const name of [
+		OPENAI_HEADERS.resetRequests,
+		OPENAI_HEADERS.resetTokens,
+		ANTHROPIC_HEADERS.reset,
+		STANDARD_HEADERS.resetAlt,
+		STANDARD_HEADERS.reset,
+	]) {
+		if (h[name] !== undefined) {
+			const parsed = parseResetTime(h[name]);
+			if (parsed !== null) {
+				result.resetAt = parsed;
+				break;
+			}
+		}
+	}
+
+	if (h["retry-after-ms"] !== undefined) {
+		const ms = Number.parseInt(h["retry-after-ms"], 10);
+		if (!Number.isNaN(ms) && ms >= 0) {
+			result.retryAfterMs = ms;
+			if (result.resetAt === undefined) {
+				result.resetAt = Date.now() + ms;
+			}
+		}
+	} else if (h["retry-after"] !== undefined) {
+		const parsed = parseRetryAfter(h["retry-after"]);
+		if (parsed !== null) {
+			result.retryAfterMs = parsed;
+			if (result.resetAt === undefined) {
+				result.resetAt = Date.now() + parsed;
+			}
+		}
+	}
+
+	return result;
+}
+
+// ============================================================================
+// Fetch with Cache / Retry (from promptfoo patterns — Cloudflare-adapted)
+// ============================================================================
+
+export interface FetchCacheEntry {
+	response: Response;
+	expiresAt: number;
+}
+
+export interface FetchWithCacheOptions extends RequestInit {
+	/** Cache TTL in milliseconds */
+	cacheTtlMs?: number;
+	/** Maximum retries for transient errors */
+	maxRetries?: number;
+	/** Base backoff in milliseconds */
+	backoffMs?: number;
+	/** Request timeout in milliseconds */
+	timeoutMs?: number;
+	/** Disable retries entirely */
+	disableRetries?: boolean;
+	/** Custom cache key generator */
+	cacheKey?: string;
+}
+
+// Simple in-memory cache for fetch responses (per-request isolation in Workers)
+const fetchCache = new Map<string, FetchCacheEntry>();
+
+function buildCacheKey(url: RequestInfo, init?: RequestInit): string {
+	const urlString = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+	const method = init?.method ?? "GET";
+	const body = init?.body ? String(init.body) : "";
+	return `${method}:${urlString}:${body}`;
+}
+
+function isTransientFetchError(response: Response): boolean {
+	if (!response?.statusText) return false;
+	const statusText = response.statusText.toLowerCase();
+	switch (response.status) {
+		case 502:
+			return statusText.includes("bad gateway");
+		case 503:
+			return statusText.includes("service unavailable");
+		case 504:
+			return statusText.includes("gateway timeout");
+		case 524:
+			return statusText.includes("timeout");
+		default:
+			return false;
+	}
+}
+
+function isRateLimitedResponse(response: Response): boolean {
+	return (
+		response.headers.get("X-RateLimit-Remaining") === "0" ||
+		response.status === 429 ||
+		response.headers.get("x-ratelimit-remaining-requests") === "0" ||
+		response.headers.get("x-ratelimit-remaining-tokens") === "0"
+	);
+}
+
+async function handleRateLimitWait(response: Response): Promise<void> {
+	const rateLimitReset = response.headers.get("X-RateLimit-Reset");
+	const retryAfter = response.headers.get("Retry-After");
+	const openaiReset =
+		response.headers.get("x-ratelimit-reset-requests") ||
+		response.headers.get("x-ratelimit-reset-tokens");
+
+	let waitTime = 60_000;
+
+	if (openaiReset) {
+		const parsedHeaders = parseRateLimitHeaders(Object.fromEntries(response.headers.entries()));
+		if (parsedHeaders.resetAt !== undefined) {
+			waitTime = Math.max(parsedHeaders.resetAt - Date.now(), 0);
+		}
+	} else if (rateLimitReset) {
+		const resetTime = new Date(Number.parseInt(rateLimitReset) * 1000);
+		waitTime = Math.max(resetTime.getTime() - Date.now() + 1000, 0);
+	} else if (retryAfter) {
+		waitTime = parseRetryAfter(retryAfter) ?? waitTime;
+	}
+
+	await sleep(waitTime);
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch with automatic caching, retries, rate-limit handling, and timeout.
+ * Adapted for Cloudflare Workers (no Node-specific dependencies).
+ */
+export async function fetchWithCache(
+	url: RequestInfo,
+	options: FetchWithCacheOptions = {},
+): Promise<Response> {
+	const {
+		cacheTtlMs,
+		maxRetries = 3,
+		backoffMs = 1000,
+		timeoutMs = 30_000,
+		disableRetries = false,
+		cacheKey: customCacheKey,
+		...fetchOptions
+	} = options;
+
+	const cacheKey = customCacheKey ?? buildCacheKey(url, fetchOptions);
+
+	// Check cache for GET requests only
+	const isGet = !fetchOptions.method || fetchOptions.method === "GET";
+	if (isGet && cacheTtlMs !== undefined && cacheTtlMs > 0) {
+		const cached = fetchCache.get(cacheKey);
+		if (cached && cached.expiresAt > Date.now()) {
+			return cached.response.clone();
+		}
+		fetchCache.delete(cacheKey);
+	}
+
+	const maxAttemptRetries = disableRetries ? 0 : maxRetries;
+	let lastErrorMessage: string | undefined;
+
+	for (let i = 0; i <= maxAttemptRetries; i++) {
+		let response: Response | undefined;
+		try {
+			// Apply timeout via AbortSignal
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+			const signal = fetchOptions.signal
+				? AbortSignal.any([fetchOptions.signal, controller.signal])
+				: controller.signal;
+
+			response = await fetch(url, { ...fetchOptions, signal });
+			clearTimeout(timeoutId);
+
+			if (isRateLimitedResponse(response)) {
+				lastErrorMessage = `Rate limited: ${response.status} ${response.statusText}`;
+				if (i < maxAttemptRetries) {
+					await handleRateLimitWait(response);
+					continue;
+				}
+				// Return the 429 response if we're out of retries
+				break;
+			}
+
+			if (!disableRetries && isTransientFetchError(response)) {
+				if (i < maxAttemptRetries) {
+					const backoffMsWithJitter = Math.pow(2, i) * backoffMs + Math.random() * 1000;
+					await sleep(backoffMsWithJitter);
+					continue;
+				}
+				lastErrorMessage = `Transient error: ${response.status} ${response.statusText}`;
+				break;
+			}
+
+			// Cache successful GET responses
+			if (isGet && cacheTtlMs !== undefined && cacheTtlMs > 0 && response.ok) {
+				fetchCache.set(cacheKey, {
+					response: response.clone(),
+					expiresAt: Date.now() + cacheTtlMs,
+				});
+			}
+
+			return response;
+		} catch (error) {
+			if (error instanceof Error && error.name === "AbortError") {
+				throw error;
+			}
+			lastErrorMessage = error instanceof Error ? error.message : String(error);
+			if (i < maxAttemptRetries) {
+				const waitTime = Math.pow(2, i) * (backoffMs + Math.random() * 1000);
+				await sleep(waitTime);
+			}
+		}
+	}
+
+	throw new Error(
+		`Request failed after ${maxAttemptRetries} retries: ${lastErrorMessage ?? "unknown error"}`,
+	);
+}
+
+/**
+ * Clear the fetch cache. Useful in tests.
+ */
+export function clearFetchCache(): void {
+	fetchCache.clear();
+}
+
+// ============================================================================
+// Retry with Deduplication (from promptfoo patterns)
+// ============================================================================
+
+/**
+ * Retries an operation with deduplication until the target count is reached or max retries are exhausted.
+ */
+export async function retryWithDeduplication<T>(
+	operation: (currentItems: T[]) => Promise<T[]>,
+	targetCount: number,
+	maxConsecutiveRetries = 2,
+	dedupFn: (items: T[]) => T[] = (items) =>
+		Array.from(new Set(items.map((item) => safeJsonStringify(item)))).map((item) =>
+			safeJsonParse(item)!,
+		),
+): Promise<T[]> {
+	const allItems: T[] = [];
+	let consecutiveRetries = 0;
+
+	while (allItems.length < targetCount && consecutiveRetries <= maxConsecutiveRetries) {
+		const newItems = await operation(allItems);
+
+		if (!Array.isArray(newItems)) {
+			consecutiveRetries++;
+			continue;
+		}
+
+		const uniqueNewItems = dedupFn([...allItems, ...newItems]).slice(allItems.length);
+		allItems.push(...uniqueNewItems);
+
+		if (uniqueNewItems.length === 0) {
+			consecutiveRetries++;
+		} else {
+			consecutiveRetries = 0;
+		}
+	}
+
+	return allItems;
+}
+
+/**
+ * Randomly samples n items from an array.
+ */
+export function sampleArray<T>(array: T[], n: number): T[] {
+	const shuffled = array.slice().sort(() => 0.5 - Math.random());
+	return shuffled.slice(0, Math.min(n, array.length));
 }

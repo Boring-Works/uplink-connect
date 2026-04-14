@@ -12,6 +12,7 @@ import {
 	getEntityMetrics,
 	getSystemMetrics,
 	aggregateMetricsWindow,
+	getAggregatedSourceMetrics,
 } from "../../../lib/metrics";
 
 describe("metrics", () => {
@@ -538,5 +539,100 @@ function createAggregateDb(
 				};
 			}),
 		})),
+	} as unknown as D1Database;
+}
+
+describe("getAggregatedSourceMetrics", () => {
+	it("aggregates metrics for all sources in a single query", async () => {
+		const db = createMockDbForAggregation([
+			{
+				source_id: "src-1",
+				total_runs: 10,
+				success_count: 8,
+				failure_count: 2,
+				normalized_count: 15,
+				error_count: 1,
+				avg_processing_ms: 1500,
+				metadata_counts: '{"manual":5,"cron":5}',
+			},
+			{
+				source_id: "src-2",
+				total_runs: 5,
+				success_count: 5,
+				failure_count: 0,
+				normalized_count: 8,
+				error_count: 0,
+				avg_processing_ms: null,
+				metadata_counts: null,
+			},
+		]);
+
+		const result = await getAggregatedSourceMetrics(db, 3600);
+		expect(result).toHaveLength(2);
+
+		const src1 = result.find((r) => r.sourceId === "src-1");
+		expect(src1).toBeDefined();
+		expect(src1?.totalRuns).toBe(10);
+		expect(src1?.successCount).toBe(8);
+		expect(src1?.failureCount).toBe(2);
+		expect(src1?.normalizedCount).toBe(15);
+		expect(src1?.errorCount).toBe(1);
+		expect(src1?.avgProcessingMs).toBe(1500);
+		expect(src1?.metadataCounts).toEqual({ manual: 5, cron: 5 });
+
+		const src2 = result.find((r) => r.sourceId === "src-2");
+		expect(src2?.totalRuns).toBe(5);
+		expect(src2?.avgProcessingMs).toBeNull();
+		expect(src2?.metadataCounts).toEqual({});
+	});
+
+	it("throws when result count exceeds maxResults", async () => {
+		const db = {
+			prepare: vi.fn().mockReturnValue({
+				bind: vi.fn().mockReturnValue({
+					first: vi.fn().mockResolvedValue({ count: 50001 }),
+				}),
+			}),
+		} as unknown as D1Database;
+
+		await expect(getAggregatedSourceMetrics(db, 3600, 50000)).rejects.toThrow(
+			"Result count 50001 exceeds maximum 50000",
+		);
+	});
+
+	it("returns empty array when no results", async () => {
+		const db = createMockDbForAggregation([]);
+		const result = await getAggregatedSourceMetrics(db, 3600);
+		expect(result).toEqual([]);
+	});
+});
+
+function createMockDbForAggregation(
+	rows: Array<{
+		source_id: string;
+		total_runs: number;
+		success_count: number;
+		failure_count: number;
+		normalized_count: number;
+		error_count: number;
+		avg_processing_ms: number | null;
+		metadata_counts: string | null;
+	}>,
+): D1Database {
+	return {
+		prepare: vi.fn().mockReturnValue({
+			bind: vi.fn().mockImplementation((...args: unknown[]) => {
+				// First call is count check
+				if (args.length === 1) {
+					return {
+						first: vi.fn().mockResolvedValue({ count: rows.length * 2 }),
+					};
+				}
+				// Second call is aggregation query
+				return {
+					all: vi.fn().mockResolvedValue({ results: rows }),
+				};
+			}),
+		}),
 	} as unknown as D1Database;
 }

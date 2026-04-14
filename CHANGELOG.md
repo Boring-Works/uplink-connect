@@ -80,7 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Promptfoo-Inspired Patterns (Data Safety & Resilience)
 - **Safe JSON serialization** - `safeJsonStringify` in `@uplink/contracts` handles circular references, BigInt, functions, and Errors gracefully. Used for all D1/R2 persistence paths
-- **Secret sanitization** - `sanitizeObject` and `sanitizeUrl` automatically redact API keys, tokens, passwords, and AWS credentials from logs and stored data. Integrated into the structured `Logger`
+- **Expanded secret sanitization** - `sanitizeObject` now redacts 70+ secret field patterns (passwords, tokens, API keys, certificates, cookies, auth headers) and detects secret-looking values (OpenAI keys, AWS AKIA, Bearer tokens, base64 blobs). All secrets replaced with `[REDACTED]`. Integrated into the structured `Logger`
+- **URL credential sanitization** - `sanitizeUrl` strips `username:password` credentials and redacts sensitive query parameters (`api_key`, `token`, `signature`, etc.)
+- **Rate limit header parsing** - `parseRateLimitHeaders`, `parseDuration`, and `parseRetryAfter` support OpenAI, Anthropic, and standard RFC formats. Used by `fetchWithCache` for intelligent backoff
+- **Fetch with cache + retry** - `fetchWithCache` provides automatic GET response caching, exponential backoff with jitter, transient error retry (502/503/504), and rate-limit wait handling. Integrated into `uplink-browser` external fetches and all notification providers
+- **D1 metrics aggregation** - `getAggregatedSourceMetrics` uses a single optimized GROUP BY query with JSON aggregation for metadata counts, replacing N+1 per-source lookups
+- **Retry with deduplication** - `retryWithDeduplication` repeatedly calls an operation until a target count of unique items is reached or max consecutive empty retries are exhausted
+- **Array sampling** - `sampleArray` randomly selects `n` items from an array
 - **Non-transient HTTP error detection** - `classifyError` now fast-paths on HTTP status codes: 400/401/404/422/501 fail immediately without retry; 429 gets 60s delay; 502/503/504 are retryable. Extracts status from `Response`, `error.status`, or error messages
 - **Connection error detection** - `isTransientConnectionError` recognizes ECONNRESET, ETIMEDOUT, fetch failed, gateway errors, and Worker CPU exceeded
 - **JSON extraction from LLM outputs** - `extractJsonObjects` and `extractFirstJsonObject` for parsing structured output from Workers AI

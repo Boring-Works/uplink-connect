@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { timingSafeEqual } from "@uplink/contracts";
+import { timingSafeEqual, fetchWithCache } from "@uplink/contracts";
 
 type Env = {
 	BROWSER_API_KEY?: string;
@@ -75,7 +75,7 @@ app.post("/internal/collect", async (c) => {
 		return c.json({ error: "URL not allowed" }, 400);
 	}
 
-	const response = await fetch(url, {
+	const response = await fetchWithCache(url, {
 		method: "GET",
 		headers: {
 			"user-agent":
@@ -83,6 +83,9 @@ app.post("/internal/collect", async (c) => {
 			accept: "text/html,application/json;q=0.9,*/*;q=0.8",
 			...headers,
 		},
+		timeoutMs: 30_000,
+		maxRetries: 2,
+		backoffMs: 1000,
 	});
 
 	const rawText = await response.text();

@@ -84,12 +84,15 @@ describe("uplink-browser unit", () => {
 				env,
 			);
 
-			expect(fetchSpy).toHaveBeenCalledWith("https://example.com", {
-				method: "GET",
-				headers: expect.objectContaining({
-					"user-agent": "Mozilla/5.0 (compatible; UplinkConnect/3.01; +https://uplink.internal)",
+			expect(fetchSpy).toHaveBeenCalledWith(
+				"https://example.com",
+				expect.objectContaining({
+					method: "GET",
+					headers: expect.objectContaining({
+						"user-agent": "Mozilla/5.0 (compatible; UplinkConnect/3.01; +https://uplink.internal)",
+					}),
 				}),
-			});
+			);
 		});
 
 		it("includes accept header", async () => {
@@ -108,12 +111,15 @@ describe("uplink-browser unit", () => {
 				env,
 			);
 
-			expect(fetchSpy).toHaveBeenCalledWith("https://example.com", {
-				method: "GET",
-				headers: expect.objectContaining({
-					accept: "text/html,application/json;q=0.9,*/*;q=0.8",
+			expect(fetchSpy).toHaveBeenCalledWith(
+				"https://example.com",
+				expect.objectContaining({
+					method: "GET",
+					headers: expect.objectContaining({
+						accept: "text/html,application/json;q=0.9,*/*;q=0.8",
+					}),
 				}),
-			});
+			);
 		});
 
 		it("returns contentType in response", async () => {

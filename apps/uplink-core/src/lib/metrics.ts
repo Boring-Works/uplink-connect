@@ -1,3 +1,4 @@
+import { safeJsonParse } from "@uplink/contracts";
 import type { Env } from "../types";
 
 export interface SourceMetrics {
@@ -444,6 +445,105 @@ export async function getSystemMetrics(
 		activeAlerts: alertsResult?.total ?? 0,
 		criticalAlerts: alertsResult?.critical ?? 0,
 	};
+}
+
+/**
+ * Optimized D1 SQL aggregation for source metrics across multiple sources.
+ * Uses a single GROUP BY query to aggregate all sources at once,
+ * with JSON extraction for nested metadata in the database.
+ *
+ * This is the promptfoo-inspired performance optimization:
+ * instead of N queries for N sources, we make 1 query.
+ */
+export interface AggregatedSourceMetrics {
+	sourceId: string;
+	totalRuns: number;
+	successCount: number;
+	failureCount: number;
+	normalizedCount: number;
+	errorCount: number;
+	avgProcessingMs: number | null;
+	// JSON-aggregated metadata counts (extracted in SQL)
+	metadataCounts: Record<string, number>;
+}
+
+export async function getAggregatedSourceMetrics(
+	db: D1Database,
+	windowSeconds: number = 3600,
+	maxResults = 10000,
+): Promise<AggregatedSourceMetrics[]> {
+	const since = Math.floor(Date.now() / 1000) - windowSeconds;
+
+	// OOM protection: check total result count first
+	const countResult = await db
+		.prepare(`SELECT COUNT(*) as count FROM ingest_runs WHERE created_at >= ?`)
+		.bind(since)
+		.first<{ count: number }>();
+
+	if ((countResult?.count ?? 0) > maxResults) {
+		throw new Error(
+			`Result count ${countResult?.count} exceeds maximum ${maxResults} for metrics aggregation`,
+		);
+	}
+
+	// Single optimized GROUP BY query aggregating ALL sources at once
+	const result = await db
+		.prepare(
+			`SELECT
+				r.source_id,
+				COUNT(*) as total_runs,
+				SUM(CASE WHEN r.status = 'normalized' THEN 1 ELSE 0 END) as success_count,
+				SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END) as failure_count,
+				SUM(r.normalized_count) as normalized_count,
+				SUM(r.error_count) as error_count,
+				AVG(
+					CASE
+						WHEN r.ended_at IS NOT NULL AND r.received_at IS NOT NULL
+						THEN unixepoch(r.ended_at) - unixepoch(r.received_at)
+						ELSE NULL
+					END
+				) * 1000 as avg_processing_ms,
+				-- JSON aggregation: count occurrences of each trigger type in metadata
+				(
+					SELECT json_group_object(trigger_type, cnt)
+					FROM (
+						SELECT
+							json_extract(r2.metadata_json, '$.triggeredBy') as trigger_type,
+							COUNT(*) as cnt
+						FROM ingest_runs r2
+						WHERE r2.source_id = r.source_id
+							AND r2.created_at >= ?
+							AND json_valid(r2.metadata_json)
+							AND json_extract(r2.metadata_json, '$.triggeredBy') IS NOT NULL
+						GROUP BY json_extract(r2.metadata_json, '$.triggeredBy')
+					)
+				) as metadata_counts
+			FROM ingest_runs r
+			WHERE r.created_at >= ?
+			GROUP BY r.source_id`,
+		)
+		.bind(since, since)
+		.all<{
+			source_id: string;
+			total_runs: number;
+			success_count: number;
+			failure_count: number;
+			normalized_count: number;
+			error_count: number;
+			avg_processing_ms: number | null;
+			metadata_counts: string | null;
+		}>();
+
+	return (result.results ?? []).map((row) => ({
+		sourceId: row.source_id,
+		totalRuns: row.total_runs,
+		successCount: row.success_count,
+		failureCount: row.failure_count,
+		normalizedCount: row.normalized_count,
+		errorCount: row.error_count,
+		avgProcessingMs: row.avg_processing_ms ? Math.round(row.avg_processing_ms) : null,
+		metadataCounts: safeJsonParse(row.metadata_counts ?? "{}") ?? {},
+	}));
 }
 
 // Aggregate metrics into 5-minute windows for historical analysis

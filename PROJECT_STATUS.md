@@ -195,10 +195,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 ### Workers Deployed
 | Worker | Status | Version ID |
 |--------|--------|------------|
-| uplink-core | ✅ Active | v94e394a0-ccaa-4a4c-ba05-aefef98350c5 |
-| uplink-edge | ✅ Active | v870ab72d-a151-4be8-9f1c-00e0e211c666 |
-| uplink-ops | ✅ Active | 6e8eb1b4-3b15-4191-9719-bd34990bb6a2 |
-| uplink-browser | ✅ Active | 4c2da6fa-58ad-48ae-ab5b-89aeb97e3abf |
+| uplink-core | ✅ Active | a4c41e4c-2b43-405f-8daf-2509beceb29a |
+| uplink-edge | ✅ Active | 38dd57dd-4370-48da-8e2d-e22d45ea631c |
+| uplink-ops | ✅ Active | f3cab1fd-e677-4e68-8b3f-a5d42a759843 |
+| uplink-browser | ✅ Active | 5bd9fc94-7059-4c4f-9412-313592ea9b69 |
 
 ### Cloudflare Resources
 | Resource | ID/Name | Status |
@@ -220,7 +220,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | TypeScript Source Files | 47 |
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
-| Test Coverage | 587 tests |
+| Test Coverage | 409 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Last Verified | April 14, 2026 |
@@ -255,7 +255,13 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Error deduplication by SHA-256 hash
 - ✅ DO concurrency safety with `blockConcurrencyWhile`
 - ✅ Safe JSON serialization for all persistence paths (handles circular refs, BigInt, Errors)
-- ✅ Automatic secret redaction in logs and stored data
+- ✅ Expanded secret redaction — 70+ field patterns + secret-looking value detection, all replaced with `[REDACTED]`
+- ✅ URL credential sanitization — strips `user:pass` and redacts sensitive query params
+- ✅ Rate limit header parsing — OpenAI, Anthropic, and standard RFC formats
+- ✅ `fetchWithCache` — GET caching, exponential backoff, transient error retry, rate-limit wait handling
+- ✅ D1 metrics aggregation — single GROUP BY query with JSON aggregation for metadata counts
+- ✅ `retryWithDeduplication` — collect unique items across repeated operations
+- ✅ `sampleArray` — random sampling utility
 - ✅ Non-transient HTTP error fast-fail (400/401/404/422/501 = no retry)
 - ✅ Connection error detection for smarter retry classification
 
@@ -336,7 +342,13 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ### Promptfoo-Inspired Patterns (Data Safety & Resilience)
 - **Safe JSON serialization** - `safeJsonStringify` handles circular references, BigInt, functions, and Errors. Applied to all D1/R2 persistence paths
-- **Secret sanitization** - `sanitizeObject` and `sanitizeUrl` redact API keys, tokens, passwords, AWS credentials from logs and stored data
+- **Expanded secret sanitization** - `sanitizeObject` redacts 70+ secret field patterns and detects secret-looking values (OpenAI keys, AWS AKIA, Bearer tokens, base64 blobs). All secrets replaced with `[REDACTED]`. Integrated into structured `Logger`
+- **URL credential sanitization** - `sanitizeUrl` strips `username:password` and redacts sensitive query parameters
+- **Rate limit header parsing** - `parseRateLimitHeaders`, `parseDuration`, and `parseRetryAfter` support OpenAI, Anthropic, and standard RFC formats
+- **Fetch with cache + retry** - `fetchWithCache` provides GET response caching, exponential backoff with jitter, transient error retry, and rate-limit wait handling. Integrated into `uplink-browser` and all notification providers
+- **D1 metrics aggregation** - `getAggregatedSourceMetrics` uses a single optimized GROUP BY query with JSON aggregation for metadata counts
+- **Retry with deduplication** - `retryWithDeduplication` collects unique items across repeated operations
+- **Array sampling** - `sampleArray` randomly selects `n` items from an array
 - **Non-transient HTTP error detection** - `classifyError` fast-paths on HTTP status: 400/401/404/422/501 fail immediately; 429 gets 60s delay; 502/503/504 are retryable
 - **Connection error detection** - `isTransientConnectionError` recognizes ECONNRESET, ETIMEDOUT, fetch failed, gateway errors, Worker CPU exceeded
 - **JSON extraction from LLM outputs** - `extractJsonObjects` / `extractFirstJsonObject` for parsing structured Workers AI output
@@ -396,4 +408,4 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ### Documentation
 - **OpenAPI 3.0 Spec**: Complete API specification at `openapi.yml`
-- **587 Tests**: All passing across unit, integration, e2e, and utility suites
+- **409 Tests**: All passing across unit, integration, e2e, and utility suites

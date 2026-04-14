@@ -1,3 +1,4 @@
+import { fetchWithCache, safeJsonStringify } from "@uplink/contracts";
 import type { NotificationPayload, SendResult } from "./base";
 import { formatAlertTitle, formatAlertBody } from "./base";
 
@@ -5,13 +6,13 @@ export function createWebhookProvider(url: string, headers?: Record<string, stri
 	return {
 		name: "webhook",
 		async send(payload: NotificationPayload): Promise<SendResult> {
-			const response = await fetch(url, {
+			const response = await fetchWithCache(url, {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
 					...headers,
 				},
-				body: JSON.stringify({
+				body: safeJsonStringify({
 					alertId: payload.alert.alertId,
 					alertType: payload.alert.alertType,
 					severity: payload.alert.severity,
@@ -22,6 +23,9 @@ export function createWebhookProvider(url: string, headers?: Record<string, stri
 					actionUrl: payload.actionUrl,
 					timestamp: new Date().toISOString(),
 				}),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {
@@ -71,10 +75,13 @@ export function createSlackProvider(webhookUrl: string, channel?: string, userna
 				],
 			};
 
-			const response = await fetch(webhookUrl, {
+			const response = await fetchWithCache(webhookUrl, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify(slackPayload),
+				body: safeJsonStringify(slackPayload),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {
@@ -117,10 +124,13 @@ export function createDiscordProvider(webhookUrl: string) {
 				],
 			};
 
-			const response = await fetch(webhookUrl, {
+			const response = await fetchWithCache(webhookUrl, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify(discordPayload),
+				body: safeJsonStringify(discordPayload),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {
@@ -176,10 +186,13 @@ export function createTeamsProvider(webhookUrl: string) {
 					: undefined,
 			};
 
-			const response = await fetch(webhookUrl, {
+			const response = await fetchWithCache(webhookUrl, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify(teamsPayload),
+				body: safeJsonStringify(teamsPayload),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {
@@ -219,10 +232,13 @@ export function createPagerDutyProvider(routingKey: string, severity?: "critical
 				},
 			};
 
-			const response = await fetch("https://events.pagerduty.com/v2/enqueue", {
+			const response = await fetchWithCache("https://events.pagerduty.com/v2/enqueue", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify(pagerPayload),
+				body: safeJsonStringify(pagerPayload),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {
@@ -255,13 +271,16 @@ export function createOpsGenieProvider(apiKey: string, responders?: string[]) {
 				},
 			};
 
-			const response = await fetch("https://api.opsgenie.com/v2/alerts", {
+			const response = await fetchWithCache("https://api.opsgenie.com/v2/alerts", {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
 					Authorization: `GenieKey ${apiKey}`,
 				},
-				body: JSON.stringify(opsgeniePayload),
+				body: safeJsonStringify(opsgeniePayload),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {
@@ -343,13 +362,16 @@ export function createCustomProvider(
 						timestamp: new Date().toISOString(),
 					});
 
-			const response = await fetch(url, {
+			const response = await fetchWithCache(url, {
 				method,
 				headers: {
 					"content-type": "application/json",
 					...headers,
 				},
 				body: ["GET", "HEAD"].includes(method) ? undefined : body,
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 
 			if (!response.ok) {

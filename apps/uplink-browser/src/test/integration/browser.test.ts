@@ -7,12 +7,22 @@ describe("uplink-browser integration", () => {
 	});
 
 	describe("GET /health", () => {
-		it("returns ok", async () => {
-			const env = createEnv();
+		it("returns ok when browser binding present", async () => {
+			const env = { ...createEnv(), BROWSER: {} as unknown };
 			const res = await app.fetch(new Request("http://localhost/health"), env);
 			expect(res.status).toBe(200);
 			const body = await res.json() as { ok: boolean; service: string };
 			expect(body.ok).toBe(true);
+			expect(body.service).toBe("uplink-browser");
+		});
+
+		it("returns degraded when browser binding missing", async () => {
+			const env = createEnv();
+			const res = await app.fetch(new Request("http://localhost/health"), env);
+			expect(res.status).toBe(200);
+			const body = await res.json() as { ok: boolean; service: string; status: string };
+			expect(body.ok).toBe(false);
+			expect(body.status).toBe("degraded");
 			expect(body.service).toBe("uplink-browser");
 		});
 	});
@@ -99,10 +109,13 @@ describe("uplink-browser integration", () => {
 				env,
 			);
 
-			expect(fetchSpy).toHaveBeenCalledWith("https://example.com", {
-				method: "GET",
-				headers: expect.objectContaining({ "x-custom": "value" }),
-			});
+			expect(fetchSpy).toHaveBeenCalledWith(
+				"https://example.com",
+				expect.objectContaining({
+					method: "GET",
+					headers: expect.objectContaining({ "x-custom": "value" }),
+				}),
+			);
 		});
 
 		it("truncates response body over 250KB", async () => {

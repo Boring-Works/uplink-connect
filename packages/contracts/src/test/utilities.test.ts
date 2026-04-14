@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
 	safeJsonStringify,
 	safeJsonParse,
@@ -11,6 +11,13 @@ import {
 	classifyHttpStatus,
 	isTransientConnectionError,
 	shouldRetryHttpError,
+	parseDuration,
+	parseRetryAfter,
+	parseRateLimitHeaders,
+	fetchWithCache,
+	clearFetchCache,
+	retryWithDeduplication,
+	sampleArray,
 } from "../index";
 
 describe("safeJsonStringify", () => {
@@ -116,7 +123,7 @@ describe("sanitizeObject", () => {
 			normalField: "visible",
 		};
 		const result = sanitizeObject(input);
-		expect(result.api_key).toBe("sup***123");
+		expect(result.api_key).toBe("[REDACTED]");
 		expect(result.normalField).toBe("visible");
 	});
 
@@ -127,9 +134,9 @@ describe("sanitizeObject", () => {
 			Authorization: "Bearer token123",
 		};
 		const result = sanitizeObject(input);
-		expect(result.API_KEY).toBe("sec***123");
-		expect(result.password).toBe("hun***000");
-		expect(result.Authorization).toBe("Bea***123");
+		expect(result.API_KEY).toBe("[REDACTED]");
+		expect(result.password).toBe("[REDACTED]");
+		expect(result.Authorization).toBe("[REDACTED]");
 	});
 
 	it("redacts nested secret fields", () => {
@@ -139,7 +146,7 @@ describe("sanitizeObject", () => {
 			},
 		};
 		const result = sanitizeObject(input);
-		expect(result.config.secret).toBe("nes***ong");
+		expect(result.config.secret).toBe("[REDACTED]");
 	});
 
 	it("redacts secret-looking values", () => {
@@ -147,7 +154,7 @@ describe("sanitizeObject", () => {
 			myToken: "sk-abcdefghijklmnopqrstuvwxyz",
 		};
 		const result = sanitizeObject(input);
-		expect(result.myToken).toBe("sk-***xyz");
+		expect(result.myToken).toBe("[REDACTED]");
 	});
 
 	it("redacts AWS access keys in values", () => {
@@ -155,7 +162,7 @@ describe("sanitizeObject", () => {
 			credential: "AKIAIOSFODNN7EXAMPLE",
 		};
 		const result = sanitizeObject(input);
-		expect(result.credential).toBe("AKI***PLE");
+		expect(result.credential).toBe("[REDACTED]");
 	});
 
 	it("handles arrays", () => {
@@ -164,15 +171,15 @@ describe("sanitizeObject", () => {
 			{ token: "secret2-long" },
 		];
 		const result = sanitizeObject(input);
-		expect(result[0].token).toBe("sec***ong");
-		expect(result[1].token).toBe("sec***ong");
+		expect(result[0].token).toBe("[REDACTED]");
+		expect(result[1].token).toBe("[REDACTED]");
 	});
 
 	it("does not mutate original", () => {
 		const input = { api_key: "secret-long-123" };
 		const result = sanitizeObject(input);
 		expect(input.api_key).toBe("secret-long-123");
-		expect(result.api_key).toBe("sec***123");
+		expect(result.api_key).toBe("[REDACTED]");
 	});
 
 	it("handles null and undefined", () => {
@@ -180,23 +187,22 @@ describe("sanitizeObject", () => {
 		expect(sanitizeObject(undefined)).toBeUndefined();
 	});
 
-	it("handles Dates", () => {
+	it("handles Dates as ISO strings", () => {
 		const date = new Date("2024-01-01");
 		const result = sanitizeObject({ createdAt: date });
-		expect(result.createdAt).toBeInstanceOf(Date);
-		expect(result.createdAt.getTime()).toBe(date.getTime());
+		expect(result.createdAt).toBe("2024-01-01T00:00:00.000Z");
 	});
 
-	it("returns [MaxDepth] at max depth", () => {
+	it("returns [...] at max depth", () => {
 		const input = { a: { b: { c: { d: { e: { f: { g: 1 } } } } } } };
-		const result = sanitizeObject(input, 3);
-		expect(result.a.b.c).toBe("[MaxDepth]");
+		const result = sanitizeObject(input, { maxDepth: 3 });
+		expect(result.a.b.c).toEqual({ d: "[...]" });
 	});
 });
 
 describe("sanitizeUrl", () => {
-	it("strips credentials from URLs", () => {
-		expect(sanitizeUrl("https://user:pass@example.com/path")).toBe("https://example.com/path");
+	it("redacts credentials from URLs", () => {
+		expect(sanitizeUrl("https://user:pass@example.com/path")).toBe("https://***:***@example.com/path");
 	});
 
 	it("returns original URL when no credentials", () => {
@@ -289,5 +295,239 @@ describe("isTransientConnectionError", () => {
 	it("returns false for non-transient errors", () => {
 		expect(isTransientConnectionError(new Error("Invalid JSON"))).toBe(false);
 		expect(isTransientConnectionError(new Error("Unauthorized"))).toBe(false);
+	});
+});
+
+describe("parseDuration", () => {
+	it("parses milliseconds", () => {
+		expect(parseDuration("100ms")).toBe(100);
+		expect(parseDuration("500ms")).toBe(500);
+	});
+
+	it("parses seconds", () => {
+		expect(parseDuration("5s")).toBe(5000);
+		expect(parseDuration("1.5s")).toBe(1500);
+	});
+
+	it("parses minutes", () => {
+		expect(parseDuration("2m")).toBe(120_000);
+	});
+
+	it("parses minutes and seconds", () => {
+		expect(parseDuration("1m30s")).toBe(90_000);
+	});
+
+	it("parses hours", () => {
+		expect(parseDuration("1h")).toBe(3_600_000);
+	});
+
+	it("parses complex durations", () => {
+		expect(parseDuration("2h15m30s")).toBe(8_130_000);
+	});
+
+	it("returns null for invalid durations", () => {
+		expect(parseDuration("not-a-duration")).toBeNull();
+		expect(parseDuration("")).toBeNull();
+		expect(parseDuration("1d")).toBeNull();
+	});
+});
+
+describe("parseRetryAfter", () => {
+	it("parses seconds", () => {
+		expect(parseRetryAfter("60")).toBe(60_000);
+		expect(parseRetryAfter("0")).toBe(0);
+	});
+
+	it("parses HTTP-date format", () => {
+		const future = new Date(Date.now() + 120_000);
+		const result = parseRetryAfter(future.toUTCString());
+		expect(result).toBeGreaterThanOrEqual(115_000);
+		expect(result).toBeLessThanOrEqual(125_000);
+	});
+
+	it("returns null for invalid values", () => {
+		expect(parseRetryAfter("not-a-number")).toBeNull();
+	});
+});
+
+describe("parseRateLimitHeaders", () => {
+	it("parses OpenAI-style headers", () => {
+		const headers = {
+			"x-ratelimit-remaining-requests": "10",
+			"x-ratelimit-remaining-tokens": "5000",
+			"x-ratelimit-limit-requests": "100",
+			"x-ratelimit-reset-requests": "1s",
+		};
+		const result = parseRateLimitHeaders(headers);
+		expect(result.remainingRequests).toBe(10);
+		expect(result.remainingTokens).toBe(5000);
+		expect(result.limitRequests).toBe(100);
+		expect(result.resetAt).toBeGreaterThan(Date.now());
+	});
+
+	it("parses Anthropic-style headers", () => {
+		const headers = {
+			"anthropic-ratelimit-requests-remaining": "5",
+			"anthropic-ratelimit-requests-limit": "50",
+			"anthropic-ratelimit-requests-reset": "2s",
+		};
+		const result = parseRateLimitHeaders(headers);
+		expect(result.remainingRequests).toBe(5);
+		expect(result.limitRequests).toBe(50);
+		expect(result.resetAt).toBeGreaterThan(Date.now());
+	});
+
+	it("parses standard RFC headers", () => {
+		const headers = {
+			"ratelimit-remaining": "20",
+			"ratelimit-limit": "100",
+			"ratelimit-reset": "5s",
+		};
+		const result = parseRateLimitHeaders(headers);
+		expect(result.remainingRequests).toBe(20);
+		expect(result.limitRequests).toBe(100);
+	});
+
+	it("parses Retry-After header", () => {
+		const result = parseRateLimitHeaders({ "retry-after": "30" });
+		expect(result.retryAfterMs).toBe(30_000);
+		expect(result.resetAt).toBeGreaterThan(Date.now());
+	});
+
+	it("handles empty headers gracefully", () => {
+		const result = parseRateLimitHeaders({});
+		expect(result.remainingRequests).toBeUndefined();
+		expect(result.resetAt).toBeUndefined();
+	});
+});
+
+describe("fetchWithCache", () => {
+	beforeEach(() => {
+		clearFetchCache();
+	});
+
+	it("fetches successfully without cache", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response('{"ok":true}', { status: 200, headers: { "content-type": "application/json" } }),
+		);
+		const response = await fetchWithCache("https://example.com/api");
+		expect(response.status).toBe(200);
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("caches GET responses when cacheTtlMs is set", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response('{"ok":true}', { status: 200, headers: { "content-type": "application/json" } }),
+		);
+		await fetchWithCache("https://example.com/api", { cacheTtlMs: 60_000 });
+		await fetchWithCache("https://example.com/api", { cacheTtlMs: 60_000 });
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not cache non-GET requests", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response('{"ok":true}', { status: 200 }),
+		);
+		await fetchWithCache("https://example.com/api", { method: "POST", cacheTtlMs: 60_000 });
+		await fetchWithCache("https://example.com/api", { method: "POST", cacheTtlMs: 60_000 });
+		expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("retries on transient errors", async () => {
+		globalThis.fetch = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
+			.mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+
+		const response = await fetchWithCache("https://example.com/api", { maxRetries: 2, backoffMs: 10 });
+		expect(response.status).toBe(200);
+		expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("handles rate limiting with retry", async () => {
+		globalThis.fetch = vi
+			.fn()
+			.mockResolvedValueOnce(new Response("Too Many Requests", { status: 429, headers: { "retry-after": "0" } }))
+			.mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+
+		const response = await fetchWithCache("https://example.com/api", { maxRetries: 2, backoffMs: 10 });
+		expect(response.status).toBe(200);
+		expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("throws after max retries exhausted", async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }),
+		);
+		await expect(
+			fetchWithCache("https://example.com/api", { maxRetries: 1, backoffMs: 10 }),
+		).rejects.toThrow("Request failed after 1 retries");
+	});
+
+	it("propagates AbortError without retry", async () => {
+		globalThis.fetch = vi.fn().mockRejectedValue(new DOMException("Aborted", "AbortError"));
+		await expect(fetchWithCache("https://example.com/api")).rejects.toThrow("Aborted");
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("retryWithDeduplication", () => {
+	it("collects unique items until target count", async () => {
+		let callCount = 0;
+		const operation = vi.fn().mockImplementation(() => {
+			callCount++;
+			return Promise.resolve([`item-${callCount}`]);
+		});
+
+		const result = await retryWithDeduplication(operation, 3);
+		expect(result).toEqual(["item-1", "item-2", "item-3"]);
+		expect(operation).toHaveBeenCalledTimes(3);
+	});
+
+	it("deduplicates returned items", async () => {
+		const operation = vi
+			.fn()
+			.mockResolvedValueOnce(["a", "b"])
+			.mockResolvedValueOnce(["b", "c"])
+			.mockResolvedValueOnce(["c", "d"]);
+
+		const result = await retryWithDeduplication(operation, 4, 2);
+		expect(result).toEqual(["a", "b", "c", "d"]);
+	});
+
+	it("stops after max consecutive retries with no new items", async () => {
+		const operation = vi.fn().mockResolvedValue(["a"]);
+		const result = await retryWithDeduplication(operation, 5, 1);
+		expect(result).toEqual(["a"]);
+		expect(operation).toHaveBeenCalledTimes(3); // initial + 2 retries (<= maxConsecutiveRetries)
+	});
+
+	it("skips non-array results", async () => {
+		const operation = vi
+			.fn()
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(["a"]);
+
+		const result = await retryWithDeduplication(operation, 1, 2);
+		expect(result).toEqual(["a"]);
+	});
+});
+
+describe("sampleArray", () => {
+	it("returns n random items", () => {
+		const arr = [1, 2, 3, 4, 5];
+		const result = sampleArray(arr, 3);
+		expect(result).toHaveLength(3);
+		expect(result.every((item) => arr.includes(item))).toBe(true);
+	});
+
+	it("returns all items if n > length", () => {
+		const arr = [1, 2];
+		const result = sampleArray(arr, 5);
+		expect(result).toHaveLength(2);
+	});
+
+	it("returns empty array for empty input", () => {
+		expect(sampleArray([], 3)).toEqual([]);
 	});
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as contracts from "@uplink/contracts";
 import {
 	createWebhookProvider,
 	createSlackProvider,
@@ -28,8 +29,7 @@ describe("notification providers", () => {
 
 	describe("webhook provider", () => {
 		it("sends POST with alert payload", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const provider = createWebhookProvider("https://hooks.example.com/uplink");
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -39,11 +39,14 @@ describe("notification providers", () => {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: expect.stringContaining('"alertId":"alert-123"'),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 		});
 
 		it("returns error on non-200 response", async () => {
-			globalThis.fetch = vi.fn().mockResolvedValue(new Response("bad request", { status: 400 }));
+			vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("bad request", { status: 400 }));
 
 			const provider = createWebhookProvider("https://hooks.example.com/uplink");
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -53,8 +56,7 @@ describe("notification providers", () => {
 		});
 
 		it("includes custom headers", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const provider = createWebhookProvider("https://hooks.example.com/uplink", {
 				"x-api-key": "secret123",
@@ -72,8 +74,7 @@ describe("notification providers", () => {
 
 	describe("slack provider", () => {
 		it("sends formatted slack message", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const provider = createSlackProvider("https://hooks.slack.com/test");
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -84,8 +85,7 @@ describe("notification providers", () => {
 		});
 
 		it("uses red color for critical alerts", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const alert = { ...createAlert(), severity: "critical" as const };
 			const provider = createSlackProvider("https://hooks.slack.com/test");
@@ -98,8 +98,7 @@ describe("notification providers", () => {
 
 	describe("discord provider", () => {
 		it("sends embed message", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const provider = createDiscordProvider("https://discord.com/api/webhooks/test");
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -112,8 +111,7 @@ describe("notification providers", () => {
 
 	describe("teams provider", () => {
 		it("sends message card", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const provider = createTeamsProvider("https://outlook.office.com/webhook/test");
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -126,8 +124,7 @@ describe("notification providers", () => {
 
 	describe("pagerduty provider", () => {
 		it("sends event to PagerDuty", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 202 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 202 }));
 
 			const provider = createPagerDutyProvider("routing-key-123");
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -137,14 +134,16 @@ describe("notification providers", () => {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: expect.stringContaining('"routing_key":"routing-key-123"'),
+				timeoutMs: 15_000,
+				maxRetries: 2,
+				backoffMs: 1000,
 			});
 		});
 	});
 
 	describe("opsgenie provider", () => {
 		it("sends alert to OpsGenie", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 202 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 202 }));
 
 			const provider = createOpsGenieProvider("genie-key-123", ["team-ops"]);
 			const result = await provider.send(buildProviderPayload(createAlert()));
@@ -156,8 +155,7 @@ describe("notification providers", () => {
 		});
 
 		it("uses P1 for critical alerts", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 202 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 202 }));
 
 			const alert = { ...createAlert(), severity: "critical" as const };
 			const provider = createOpsGenieProvider("genie-key-123");
@@ -170,8 +168,7 @@ describe("notification providers", () => {
 
 	describe("custom provider", () => {
 		it("substitutes template variables", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const template = '{"msg": "{{message}}", "sev": "{{severity}}"}';
 			const provider = createCustomProvider(
@@ -189,8 +186,7 @@ describe("notification providers", () => {
 		});
 
 		it("sends GET without body", async () => {
-			const fetchSpy = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-			globalThis.fetch = fetchSpy;
+			const fetchSpy = vi.spyOn(contracts, "fetchWithCache").mockResolvedValue(new Response("ok", { status: 200 }));
 
 			const provider = createCustomProvider("https://custom.example.com/alert", "GET");
 			const result = await provider.send(buildProviderPayload(createAlert()));
