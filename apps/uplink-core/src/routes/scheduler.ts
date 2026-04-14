@@ -425,8 +425,8 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 		<div class="nav">
 			<a href="/dashboard">Dashboard</a>
 			<a href="/scheduler">Scheduler</a>
-			<a href="/internal/settings">Settings API</a>
-			<a href="/internal/audit-log">Audit Log</a>
+			<a href="/settings">Settings</a>
+			<a href="/audit-log">Audit Log</a>
 		</div>
 
 		<div class="card">

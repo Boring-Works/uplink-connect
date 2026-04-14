@@ -238,9 +238,9 @@ app.get("/dashboard", async (c) => {
 		const warningAlertCount = alerts.filter(a => a.severity === "warning").length;
 
 		const pipelineStagesHtml = pipelineTopology?.stages.map(stage => {
-			const rate = stage.outputRate ? `${stage.outputRate}/hr` : "N/A";
+			const rate = stage.outputRate ? `${stage.outputRate}/hr` : '<span style="color:var(--graphite);font-size:0.75rem;">no data</span>';
 			return `<div class="stage ${stage.status}"><div class="stage-name">${escapeHtml(stage.name)}</div><div class="stage-rate">${rate}</div></div>`;
-		}).join('<span class="arrow">→</span>') || "";
+		}).join('<span class="arrow">→</span>') || '<div class="empty-state">Pipeline data unavailable</div>';
 
 		const componentsHtml = components?.map(comp => {
 			const icon = comp.status === "healthy" ? "✓" : comp.status === "degraded" ? "!" : "✗";
@@ -274,8 +274,9 @@ app.get("/dashboard", async (c) => {
 			const run = r as { run_id: string; source_id: string; source_name: string; status: string; record_count: number; created_at: number };
 			const statusClass = `run-status-${run.status}`;
 			const time = new Date(run.created_at * 1000).toLocaleString();
+			const shortId = run.run_id.split(':').pop() || run.run_id;
 			return `<tr>
-				<td><div class="mono">${run.run_id.slice(0, 8)}...</div></td>
+				<td><div class="mono" title="${run.run_id}">${shortId.slice(0, 14)}...</div></td>
 				<td>${escapeHtml(run.source_name)}</td>
 				<td><span class="badge ${statusClass}">${run.status}</span></td>
 				<td>${run.record_count}</td>
@@ -654,7 +655,13 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			font-size: 0.8rem;
 			color: var(--graphite);
 			margin-top: 8px;
+			padding: 6px 10px;
+			border-radius: 6px;
+			display: inline-block;
 		}
+		.ws-connected { background: rgba(45,106,79,0.1); color: var(--success); }
+		.ws-reconnecting { background: rgba(179,89,0,0.1); color: var(--warning); }
+		.ws-error { background: rgba(155,44,44,0.1); color: var(--danger); }
 		.section-title {
 			font-size: 1rem;
 			font-weight: 600;
@@ -676,8 +683,8 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		<div class="nav">
 			<a href="/dashboard">Dashboard</a>
 			<a href="/scheduler">Scheduler</a>
-			<a href="/internal/settings" target="_blank">Settings API</a>
-			<a href="/internal/audit-log" target="_blank">Audit Log</a>
+			<a href="/settings">Settings</a>
+			<a href="/audit-log">Audit Log</a>
 			<button onclick="location.reload()">Refresh</button>
 		</div>
 
@@ -797,6 +804,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			ws = new WebSocket(wsUrl);
 			ws.onopen = function() {
 				statusEl.textContent = 'Live updates connected';
+				statusEl.className = 'ws-connected';
 				ws.send(JSON.stringify({ type: 'subscribe', topics: ['metrics', 'all'] }));
 			};
 			ws.onmessage = function(event) {
@@ -811,10 +819,12 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			};
 			ws.onclose = function() {
 				statusEl.textContent = 'Reconnecting...';
+				statusEl.className = 'ws-reconnecting';
 				reconnectTimer = setTimeout(connect, 3000);
 			};
 			ws.onerror = function() {
 				statusEl.textContent = 'Connection error';
+				statusEl.className = 'ws-error';
 			};
 		}
 
@@ -828,9 +838,9 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				const cards = document.querySelectorAll('.card .metric');
 				if (cards[1]) cards[1].textContent = total;
 			}
-			if (data.queue) {
+			if (data.queue && data.queue.lagSeconds != null) {
 				const cards = document.querySelectorAll('.card .metric');
-				if (cards[2]) cards[2].textContent = (data.queue.pending || 0) + 'm';
+				if (cards[2]) cards[2].textContent = Math.round(data.queue.lagSeconds / 60) + 'm';
 			}
 			if (data.alerts) {
 				const cards = document.querySelectorAll('.card .metric');
