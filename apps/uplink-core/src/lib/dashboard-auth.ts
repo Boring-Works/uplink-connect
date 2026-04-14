@@ -45,25 +45,10 @@ export async function getDashboardPasswordHash(env: Env): Promise<{ hash: string
 		// fall through
 	}
 
-	// Generate a default password
-	const defaultPassword = generateDefaultPassword();
+	// Use fixed default password
+	const defaultPassword = "wecreate";
 	const hash = await hashPassword(defaultPassword);
 	return { hash, isDefault: true, defaultPassword };
-}
-
-function generateDefaultPassword(): string {
-	// Generate a readable random password: 3 words + 4 digits
-	const words = [
-		"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel",
-		"india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa",
-		"quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray",
-		"yankee", "zulu", "forge", "anvil", "beam", "crane", "drill", "engine",
-	];
-	const w1 = words[Math.floor(Math.random() * words.length)];
-	const w2 = words[Math.floor(Math.random() * words.length)];
-	const w3 = words[Math.floor(Math.random() * words.length)];
-	const num = Math.floor(1000 + Math.random() * 9000);
-	return `${w1}-${w2}-${w3}-${num}`;
 }
 
 /**
