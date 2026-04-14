@@ -145,16 +145,23 @@ pnpm dev:browser
 pnpm dev:ops
 ```
 
-### Live Data Source Example
+### Live Public Data Sources
 
-A real public data source is actively collecting:
+Four real public data sources are actively collecting to prove the platform handles diverse APIs:
 
 ```bash
-# Set up USGS earthquakes hourly collection
-./scripts/setup-usgs-source.sh
+# Set up all public sources
+./scripts/setup-public-sources.sh
 ```
 
-This configures `usgs-earthquakes-hourly` and triggers an initial collection. The source auto-triggers every hour via cron.
+| Source | API | What It Proves |
+|--------|-----|----------------|
+| **USGS Earthquakes** | `earthquake.usgs.gov` | GeoJSON ingestion, continuous monitoring |
+| **GitHub Public Events** | `api.github.com/events` | High-frequency collection, auth headers |
+| **Hacker News Top Stories** | `firebaseio.com` | Array-based IDs, large nested payloads |
+| **Exchange Rates** | `exchangerate-api.com` | Financial data, nested JSON objects |
+
+All sources have verified end-to-end flow: entities in D1, artifacts in R2, metrics in Analytics Engine. Trigger manually via the API or dashboard until the scheduler settings UI is built.
 
 ### Environment Setup
 

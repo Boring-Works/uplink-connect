@@ -17,6 +17,8 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 - **Architecture Alignment:** 98%+ match with external v3.01 plan
 - **Code Quality:** Consistent patterns, proper error handling, comprehensive logging
 - **Live Deployment:** All workers deployed and healthy
+- **Real Data Verified:** 4 public API sources successfully ingesting end-to-end
+- **Cost Safety:** Hard-coded scheduled triggers removed; manual trigger only
 
 ---
 
@@ -366,7 +368,21 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 
 ## 10. Gaps and Recommendations
 
-### 10.1 Minor Gaps (Non-blocking)
+### 10.1 Resolved Issues (Fixed Since Initial Audit)
+
+| Issue | Original Impact | Resolution |
+|-------|-----------------|------------|
+| `ingest_queue_status` missing table | P0 - Dashboard crash | Removed query, derive metrics from `ingest_runs` |
+| `setInterval` in DOs | P0 - Timer loss on hibernation | Migrated to DO alarms |
+| File upload memory bomb | P0 - OOM/DoS vector | Hash ArrayBuffer directly |
+| Timing attack in auth | P1 - Security weakness | Added `timingSafeEqual` across all workers |
+| N+1 entity writes | P1 - Performance bottleneck | Documented; batching planned for next iteration |
+| `CollectionWorkflow` fetch binding | P0 - Workflow failure | Wrapped fetch in arrow function |
+| `fastStableHash` too short | P0 - Schema validation failure | Added length padding to meet >=16 chars |
+| Malformed `wrangler.jsonc` | P1 - Cron/trigger misconfiguration | Fixed JSON structure |
+| Hard-coded scheduled triggers | P1 - Unexpected costs/inflexibility | Removed; manual trigger until scheduler UI |
+
+### 10.2 Minor Gaps (Non-blocking)
 
 | Gap | Impact | Recommendation |
 |-----|--------|----------------|
@@ -375,19 +391,22 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | Secrets Store not used | Low | Migrate when out of beta |
 | Browser Rendering not fully utilized | Low | Add CDP support when needed |
 | GraphQL API not implemented | Low | Add if client demand grows |
+| Scheduler settings UI | Medium | Build configurable cron per source in dashboard |
 
-### 10.2 Code Improvements (Optional)
+### 10.3 Code Improvements (Optional)
 
 1. **Add request ID propagation** - Pass x-request-id through service bindings
 2. **Implement request timeout handling** - Add deadline propagation
 3. **Add rate limiting middleware** - Per-source rate limits at edge
 4. **Add entity relationship traversal API** - Graph query endpoint
+5. **Batch entity writes** - Use D1 batch API for N+1 elimination
 
-### 10.3 Testing Improvements (Optional)
+### 10.4 Testing Improvements (Optional)
 
 1. **Add load tests** - Queue batch processing under stress
 2. **Add chaos tests** - Simulate D1/R2 failures
 3. **Add property-based tests** - Fuzzing for envelope validation
+4. **Add security boundary tests** - Auth bypass, malformed DO payloads
 
 ---
 
@@ -425,30 +444,32 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | Complex collector | ✅ | CollectionWorkflow with steps | 100% |
 | Browser collection | ⚠️ | Basic implementation | 70% |
 | File upload | ✅ | Multipart endpoint + R2 | 100% |
-| Real-time dashboard | ✅ | WebSocket DO | 100% |
+| Real-time dashboard | ✅ | WebSocket DO with alarms | 100% |
 | AI error diagnosis | ✅ | RAG with Vectorize + Workers AI | 100% |
+| Public source ingestion | ✅ | 4 live APIs verified end-to-end | 100% |
 
 ---
 
 ## 12. Final Assessment
 
-### 12.1 Production Readiness Score: 9.5/10
+### 12.1 Production Readiness Score: 9.2/10
 
 | Category | Score | Notes |
 |----------|-------|-------|
 | Architecture | 9.8/10 | Excellent Cloudflare-native design |
-| Code Quality | 9.2/10 | Clean, typed, well-structured |
-| Test Coverage | 9.5/10 | Comprehensive across all layers |
-| Documentation | 9.5/10 | Comprehensive, well-organized |
+| Code Quality | 8.8/10 | Clean overall, some SRP violations (db.ts) |
+| Test Coverage | 9.0/10 | Strong happy-path coverage, edge cases need work |
+| Documentation | 9.5/10 | Comprehensive, recently updated, accurate |
 | Observability | 9.5/10 | Full metrics, alerting, real-time dashboard |
-| Security | 9.2/10 | Proper auth, no secrets in code, HMAC webhooks |
+| Security | 9.2/10 | Proper auth, timing-safe comparisons, no secrets in code |
 | Deployment | 9.5/10 | Automated scripts, live and validated |
+| Data Verification | 9.5/10 | 4 public APIs successfully ingesting end-to-end |
 
 ### 12.2 Recommendation
 
-**APPROVED FOR PRODUCTION USE**
+**APPROVED FOR PRODUCTION USE WITH MANUAL TRIGGERING**
 
-Uplink Connect v3.01 (v0.1.1) is ready for production use. The implementation:
+Uplink Connect v3.01 (v0.1.1) is ready for production use with manual or API-driven triggers. The implementation:
 
 1. ✅ Follows Cloudflare's 2026 platform guidance
 2. ✅ Implements all critical features from the architecture plan
@@ -457,8 +478,11 @@ Uplink Connect v3.01 (v0.1.1) is ready for production use. The implementation:
 5. ✅ Has clear documentation and runbooks
 6. ✅ Uses proper security practices
 7. ✅ Is actively deployed and passing live tests
+8. ✅ Has verified end-to-end data flow with 4 public APIs
 
-### 12.3 Next Steps (Post-Deployment)
+**Caveat:** Hard-coded scheduled triggers were removed for cost safety and configurability. A scheduler settings UI should be built before offering automated recurring collection to users.
+
+### 12.3 Next Steps
 
 1. **Immediate (Week 1)**
    - Monitor production metrics via dashboard
@@ -467,6 +491,7 @@ Uplink Connect v3.01 (v0.1.1) is ready for production use. The implementation:
    - Verify export API workflows
 
 2. **Short-term (Month 1)**
+   - Build scheduler settings UI for per-source cron configuration
    - Gather operator feedback
    - Create source-specific runbooks
    - Document common error patterns for RAG agent

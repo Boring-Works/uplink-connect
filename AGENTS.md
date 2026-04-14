@@ -65,7 +65,7 @@ pnpm dev:ops       # Terminal 4
 ./scripts/deploy.sh
 ./scripts/bootstrap.sh --secrets
 ./scripts/smoke-test.sh
-./scripts/setup-usgs-source.sh
+./scripts/setup-public-sources.sh
 ```
 
 ---
@@ -236,7 +236,7 @@ pnpm vitest run --config vitest.live.config.ts
 **Dashboard shows zeros:**
 - Normal if no data ingested
 - Check `/internal/dashboard/v2` with internal key
-- Run `./scripts/setup-usgs-source.sh` to configure a live public data source
+- Run `./scripts/setup-public-sources.sh` to configure live public data sources
 
 **WebSocket connections failing:**
 - Ensure `DASHBOARD_STREAM` and `ERROR_AGENT` DO bindings are in wrangler.jsonc

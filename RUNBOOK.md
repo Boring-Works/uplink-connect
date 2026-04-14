@@ -28,16 +28,21 @@ curl https://uplink-core.codyboring.workers.dev/internal/dashboard/v2 \
 
 ### Live Data Sources
 
-The following public data sources are configured for continuous collection:
+The following public data sources are available for testing and demonstration:
 
 - **USGS Earthquakes (Hourly)** — `usgs-earthquakes-hourly`
-  - Auto-triggers every hour via cron
-  - Setup script: `./scripts/setup-usgs-source.sh`
+  - Setup script: `./scripts/setup-public-sources.sh`
   - Verify collection:
     ```bash
     curl "https://uplink-core.codyboring.workers.dev/internal/runs?sourceId=usgs-earthquakes-hourly&limit=5" \
       -H "x-uplink-internal-key: $CORE_INTERNAL_KEY"
     ```
+
+- **GitHub Public Events** — `github-public-events`
+- **Hacker News Top Stories** — `hackernews-top-stories`
+- **Exchange Rates (USD)** — `exchange-rates-daily`
+
+**Note:** Scheduled auto-triggers are currently disabled to avoid hard-coding. Use manual triggers or configure via the settings API until the scheduler UI is built.
 
 ---
 

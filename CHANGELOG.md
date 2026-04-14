@@ -48,11 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added 35+ new tests across all suites
 - Total test count: 554+ (up from 519)
 
-#### Real Data Source
-- **USGS Earthquake Ingestion** - Hourly automated collection from USGS public API
-  - Source: `usgs-earthquakes-hourly`
-  - Auto-triggers every hour via cron (`0 * * * *`)
-  - Verified end-to-end: entity stored in D1, artifact in R2, dashboard shows live flow
+#### Real Data Sources
+- **Multi-source public API ingestion** - 4 live sources proving platform versatility
+  - `usgs-earthquakes-hourly` — GeoJSON from USGS
+  - `github-public-events` — GitHub API events
+  - `hackernews-top-stories` — HN top story IDs
+  - `exchange-rates-daily` — Currency rates
+  - All verified end-to-end: entities in D1, artifacts in R2, dashboard shows live flow
+  - Setup script: `scripts/setup-public-sources.sh`
+  - **Note:** Hard-coded scheduled auto-triggers removed. Manual trigger via API/dashboard until scheduler settings UI is built.
 
 #### Bug Fixes (P0)
 - Fixed `ingest_queue_status` missing table crash in `DashboardStreamDO`

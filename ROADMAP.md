@@ -301,31 +301,34 @@ Uplink Connect v1 is **COMPLETE**:
 
 ## Future Enhancements (Post-v0.1.1)
 
-### Potential Additions
+### Immediate (Next 2 Weeks)
 
-1. **Pipelines Integration** (beta)
+1. **Scheduler Settings UI**
+   - Dashboard page for per-source cron configuration
+   - Enable/disable toggle per source
+   - Store schedules in `platform_settings` or dedicated table
+   - Replace the disabled `triggerScheduledSources` stub
+
+### Medium-term (Next Quarter)
+
+2. **Pipelines Integration** (beta)
    - Stream analytics events to R2 Iceberg
    - SQL transforms on ingest
 
-2. **Advanced Browser Collection**
+3. **Advanced Browser Collection**
    - Browser Rendering binding full utilization
    - CDP/Puppeteer support
    - Session reuse across collections
 
-3. **AI Extraction**
+4. **AI Extraction**
    - Workers AI for unstructured data extraction
    - AI Gateway for multi-provider
    - Confidence scoring
 
-4. **Multi-region**
+5. **Multi-region**
    - D1 read replication
    - Regional Durable Objects
    - Geo-routing
-
-5. **Advanced Workflows**
-   - Parent-child batch workflows
-   - Human-in-the-loop approvals
-   - Conditional branching
 
 6. **GraphQL API Layer**
    - Unified query interface
@@ -356,10 +359,11 @@ Uplink Connect v1 is **COMPLETE**:
 
 ## Immediate Next Tasks (Post-v0.1.1)
 
-1. Monitor production deployment metrics
-2. Gather operator feedback on dashboard and error agent
-3. Document source-specific runbooks
-4. Evaluate Pipelines beta when available
+1. **Build Scheduler Settings UI** - Per-source cron configuration in dashboard (priority: replaces hard-coded triggers)
+2. Monitor production deployment metrics
+3. Gather operator feedback on dashboard and error agent
+4. Document source-specific runbooks
+5. Evaluate Pipelines beta when available
 
 ---
 

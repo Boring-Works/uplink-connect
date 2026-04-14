@@ -50,7 +50,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Entity normalization and deduplication
 - ✅ Vectorize semantic search
 - ✅ **AST-based code chunking** - Intelligent chunking of TS/JS files by constructs (function, class, interface, type)
-- ✅ **Live public data source** - USGS earthquakes hourly collection actively running
+- ✅ **Live public data sources** - 4 diverse APIs configured and verified (USGS, GitHub, HN, exchange rates)
+- ✅ **Manual trigger safety** - Hard-coded scheduled triggers removed to prevent unexpected costs
 
 #### Coordination & Reliability
 - ✅ Durable Object-based source coordination
@@ -214,7 +215,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Lines of Code | ~19,655 (TypeScript) |
 | Test Coverage | 554 tests |
 | Migrations | 9 |
-| Live Data Sources | 1 (USGS earthquakes hourly) |
+| Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Last Verified | April 14, 2026 |
 | Documentation | 11 files, ~3,700 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
@@ -237,6 +238,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ DO alarms replace setInterval in all DOs
 - ✅ Constant-time auth comparisons across all workers
 - ✅ Real public API data flowing end-to-end
+- ✅ Hard-coded scheduled triggers removed (cost safety)
 
 ---
 
@@ -266,7 +268,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - [x] Add PagerDuty/Slack alert integrations
 - [x] Apply AST-based chunking from RepoMind patterns
 - [x] Fix all P0 bugs (DO alarms, auth timing, hash length, fetch binding, queue config)
-- [x] Wire up live public data source (USGS earthquakes)
+- [x] Wire up live public data sources (USGS earthquakes, GitHub events, HN stories, exchange rates)
+- [x] Remove hard-coded scheduled triggers (prevent unexpected costs until settings UI exists)
 
 ### Medium Value
 - [x] Split large files (db.ts, index.ts)
@@ -314,11 +317,22 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - **RAG Error Agent**: `ErrorAgentDO` uses Vectorize + Workers AI to diagnose errors via WebSocket chat
 - **Data Export API**: Export runs, entities, and errors in JSON, CSV, or NDJSON formats
 
-### Live Data Source
-- **USGS Earthquakes**: Hourly automated collection from public USGS API
+### Live Data Sources
+- **USGS Earthquakes**: Public USGS GeoJSON feed
   - Source ID: `usgs-earthquakes-hourly`
-  - Verified: entities in D1, artifacts in R2, dashboard shows live flow
-  - Setup script: `scripts/setup-usgs-source.sh`
+  - Proves: GeoJSON ingestion, continuous monitoring
+- **GitHub Public Events**: GitHub API events feed
+  - Source ID: `github-public-events`
+  - Proves: High-frequency collection, required headers (User-Agent)
+- **Hacker News Top Stories**: Firebase HN API
+  - Source ID: `hackernews-top-stories`
+  - Proves: Array-based IDs, large nested payloads
+- **Exchange Rates**: exchangerate-api.com USD base
+  - Source ID: `exchange-rates-daily`
+  - Proves: Financial data, deeply nested JSON
+- All verified: entities in D1, artifacts in R2, dashboard shows live flow
+- Setup script: `scripts/setup-public-sources.sh`
+- **Important:** Scheduled auto-triggers are disabled. Trigger manually via API or dashboard until scheduler settings UI is built.
 
 ### P0 Bug Fixes
 - Replaced `setInterval` with DO alarms in `DashboardStreamDO` and `NotificationDispatcher`
@@ -328,6 +342,7 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - Fixed `fastStableHash` length to meet schema requirement (>=16 chars)
 - Fixed malformed `wrangler.jsonc` (triggers nested inside queues)
 - Removed misplaced notification endpoint from `browser.ts`
+- Removed hard-coded scheduled auto-triggers to prevent unexpected costs
 
 ### DevOps & Monitoring
 - **GitHub Actions CI/CD**: Automated testing on PRs and pushes to main
