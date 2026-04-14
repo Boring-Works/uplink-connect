@@ -135,6 +135,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | CHANGELOG.md | ✅ Complete | ~200 | Release notes |
 | AUDIT_REPORT.md | ✅ Complete | ~450 | Previous audit |
 | LICENSE | ✅ Added | ~20 | MIT License |
+| openapi.yml | ✅ Added | ~500 | OpenAPI 3.0 spec |
 
 **Total Documentation:** ~3,700 lines across 11 files
 
@@ -198,22 +199,28 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 | Metric | Value |
 |--------|-------|
-| Total Files | ~123 source files |
-| TypeScript Files | 73 |
-| Test Files | 34 |
-| Lines of Code | ~19,471 (TypeScript) |
-| Test Coverage | 500+ tests |
+| Total Files | ~80 source files |
+| TypeScript Source Files | 47 |
+| Test Files | 33 |
+| Lines of Code | ~19,655 (TypeScript) |
+| Test Coverage | 519 tests |
 | Migrations | 8 |
 | Documentation | 11 files, ~3,700 lines |
+| OpenAPI Spec | 1 file, ~500 lines |
+| CI/CD Workflows | 1 (GitHub Actions) |
+| Cron Monitors | 1 (synthetic health checks every 5 min) |
 
 ### Quality Checks
 - ✅ No TODO/FIXME comments in production code
 - ✅ No debugger statements
 - ✅ Strict TypeScript enabled
 - ✅ All type checks pass
-- ✅ All tests pass
+- ✅ All tests pass (519)
 - ✅ Biome linting clean
 - ✅ No secrets in code
+- ✅ Core worker refactored into 12 route modules
+- ✅ CI/CD pipeline configured
+- ✅ Synthetic monitoring active
 
 ---
 
@@ -272,3 +279,20 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 **Last Updated:** April 14, 2026  
 **Status:** ✅ PRODUCTION READY
+
+---
+
+## Recent Changes (April 14, 2026)
+
+### Code Quality
+- **Refactored uplink-core**: Split 1,250 line `index.ts` into 12 focused route modules
+- **Route Modules**: health, runs, sources, entities, artifacts, alerts, metrics, errors, dashboard, health-monitor, settings, browser
+
+### DevOps & Monitoring
+- **GitHub Actions CI/CD**: Automated testing on PRs and pushes to main
+- **Synthetic Monitoring**: 5-minute cron job pinging all health endpoints
+- **Analytics Integration**: Metrics written to Analytics Engine for uptime tracking
+
+### Documentation
+- **OpenAPI 3.0 Spec**: Complete API specification at `openapi.yml`
+- **519 Tests**: All passing across unit, integration, and e2e suites

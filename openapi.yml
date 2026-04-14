@@ -1,0 +1,745 @@
+# Uplink Connect - OpenAPI 3.0.3 Specification
+
+openapi: 3.0.3
+info:
+  title: Uplink Connect API
+  description: |
+    Cloudflare-native data ingestion platform API.
+    
+    ## Authentication
+    - **External endpoints**: Bearer token in `Authorization` header
+    - **Internal endpoints**: `x-uplink-internal-key` header
+  version: 3.01.0
+  contact:
+    name: BoringWorks
+    url: https://github.com/Boring-Works/uplink-connect
+
+servers:
+  - url: https://uplink-core.codyboring.workers.dev
+    description: Production Core API
+  - url: https://uplink-edge.codyboring.workers.dev
+    description: Production Edge API
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Intake
+    description: Data ingestion endpoints
+  - name: Sources
+    description: Source management
+  - name: Runs
+    description: Ingest run tracking
+  - name: Entities
+    description: Entity search and lineage
+  - name: Artifacts
+    description: Raw artifact access
+  - name: Alerts
+    description: Alert management
+  - name: Metrics
+    description: System and source metrics
+  - name: Errors
+    description: Error tracking and recovery
+  - name: Dashboard
+    description: Dashboard and visualizations
+  - name: Health Monitor
+    description: Pipeline health monitoring
+  - name: Settings
+    description: Platform settings and audit
+
+paths:
+  # Health
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        200:
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  service: { type: string }
+                  now: { type: string, format: date-time }
+
+  # Sources
+  /internal/sources:
+    get:
+      tags: [Sources]
+      summary: List sources
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: includeDeleted
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        200:
+          description: List of sources
+    post:
+      tags: [Sources]
+      summary: Create or update source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceId, name, type]
+              properties:
+                sourceId: { type: string }
+                name: { type: string }
+                type: { type: string, enum: [api, webhook, email, file, browser, manual, stream] }
+                config: { type: object }
+      responses:
+        201:
+          description: Source created
+
+  /internal/sources/{sourceId}:
+    delete:
+      tags: [Sources]
+      summary: Delete source
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: permanent
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        200:
+          description: Source deleted
+
+  /internal/sources/{sourceId}/restore:
+    post:
+      tags: [Sources]
+      summary: Restore deleted source
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Source restored
+
+  /internal/sources/{sourceId}/trigger:
+    post:
+      tags: [Sources]
+      summary: Trigger collection workflow
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean }
+                triggeredBy: { type: string }
+                reason: { type: string }
+      responses:
+        202:
+          description: Workflow started
+
+  /internal/sources/{sourceId}/health:
+    get:
+      tags: [Sources]
+      summary: Get source health
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Source health data
+
+  /internal/sources/{sourceId}/health/timeline:
+    get:
+      tags: [Health Monitor]
+      summary: Get source health timeline
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: window
+          in: query
+          schema: { type: integer, default: 3600 }
+      responses:
+        200:
+          description: Health timeline
+
+  /internal/sources/{sourceId}/runs/tree:
+    get:
+      tags: [Sources]
+      summary: Get source run tree
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        200:
+          description: Run tree
+
+  # Runs
+  /internal/runs:
+    get:
+      tags: [Runs]
+      summary: List runs
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        200:
+          description: List of runs
+
+  /internal/runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Get run details
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Run details
+        404:
+          description: Run not found
+
+  /internal/runs/{runId}/replay:
+    post:
+      tags: [Runs]
+      summary: Replay a run
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        202:
+          description: Replay queued
+        404:
+          description: Run not found
+        409:
+          description: Run cannot be replayed
+
+  /internal/runs/{runId}/trace:
+    get:
+      tags: [Runs]
+      summary: Get run trace
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Run trace
+        404:
+          description: Run not found
+
+  # Entities
+  /internal/search/entities:
+    post:
+      tags: [Entities]
+      summary: Search entities by similarity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                topK: { type: integer, default: 10 }
+                filter: { type: object }
+      responses:
+        200:
+          description: Search results
+        503:
+          description: Vector search not configured
+
+  /internal/entities/{entityId}/lineage:
+    get:
+      tags: [Entities]
+      summary: Get entity lineage
+      parameters:
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Entity lineage
+        404:
+          description: Entity not found
+
+  # Artifacts
+  /internal/artifacts/{artifactId}:
+    get:
+      tags: [Artifacts]
+      summary: Get artifact
+      parameters:
+        - name: artifactId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Artifact details
+        404:
+          description: Artifact not found
+
+  # Alerts
+  /internal/alerts:
+    get:
+      tags: [Alerts]
+      summary: List active alerts
+      parameters:
+        - name: severity
+          in: query
+          schema: { type: string, enum: [critical, warning, info] }
+        - name: type
+          in: query
+          schema: { type: string }
+        - name: sourceId
+          in: query
+          schema: { type: string }
+        - name: acknowledged
+          in: query
+          schema: { type: boolean }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+      responses:
+        200:
+          description: List of alerts
+
+  /internal/alerts/check:
+    post:
+      tags: [Alerts]
+      summary: Run alert checks
+      parameters:
+        - name: sourceId
+          in: query
+          schema: { type: string }
+      responses:
+        200:
+          description: Check results
+
+  /internal/alerts/{alertId}/acknowledge:
+    post:
+      tags: [Alerts]
+      summary: Acknowledge alert
+      parameters:
+        - name: alertId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: Alert acknowledged
+        404:
+          description: Alert not found
+
+  /internal/alerts/{alertId}/resolve:
+    post:
+      tags: [Alerts]
+      summary: Resolve alert
+      parameters:
+        - name: alertId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        200:
+          description: Alert resolved
+        404:
+          description: Alert not found
+
+  # Metrics
+  /internal/metrics/system:
+    get:
+      tags: [Metrics]
+      summary: Get system metrics
+      responses:
+        200:
+          description: System metrics
+
+  /internal/metrics/sources:
+    get:
+      tags: [Metrics]
+      summary: Get all source metrics
+      parameters:
+        - name: window
+          in: query
+          schema: { type: integer, default: 3600 }
+      responses:
+        200:
+          description: Source metrics
+
+  /internal/metrics/sources/{sourceId}:
+    get:
+      tags: [Metrics]
+      summary: Get per-source metrics
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: window
+          in: query
+          schema: { type: integer, default: 3600 }
+      responses:
+        200:
+          description: Source metrics
+        404:
+          description: Source not found
+
+  /internal/metrics/queue:
+    get:
+      tags: [Metrics]
+      summary: Get queue metrics
+      responses:
+        200:
+          description: Queue metrics
+
+  /internal/metrics/entities:
+    get:
+      tags: [Metrics]
+      summary: Get entity metrics
+      responses:
+        200:
+          description: Entity metrics
+
+  # Errors
+  /internal/errors:
+    get:
+      tags: [Errors]
+      summary: List ingest errors
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: sourceId
+          in: query
+          schema: { type: string }
+        - name: phase
+          in: query
+          schema: { type: string }
+        - name: errorCategory
+          in: query
+          schema: { type: string }
+        - name: fromDate
+          in: query
+          schema: { type: string }
+        - name: toDate
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        200:
+          description: List of errors
+
+  /internal/errors/{errorId}/retry:
+    post:
+      tags: [Errors]
+      summary: Retry failed operation
+      parameters:
+        - name: errorId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean }
+                triggeredBy: { type: string }
+      responses:
+        200:
+          description: Retry succeeded
+        409:
+          description: Max retries exceeded
+        422:
+          description: Retry failed
+
+  # Dashboard
+  /dashboard:
+    get:
+      tags: [Dashboard]
+      summary: HTML dashboard
+      responses:
+        200:
+          description: HTML dashboard
+          content:
+            text/html:
+              schema: { type: string }
+
+  /internal/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard data (v1)
+      responses:
+        200:
+          description: Dashboard data
+
+  /internal/dashboard/v2:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard data (v2)
+      parameters:
+        - name: window
+          in: query
+          schema: { type: integer, default: 86400 }
+      responses:
+        200:
+          description: Dashboard data
+
+  # Health Monitor
+  /internal/health/components:
+    get:
+      tags: [Health Monitor]
+      summary: Get component health
+      responses:
+        200:
+          description: Component health status
+
+  /internal/health/topology:
+    get:
+      tags: [Health Monitor]
+      summary: Get pipeline topology
+      responses:
+        200:
+          description: Pipeline topology
+
+  /internal/health/flow:
+    get:
+      tags: [Health Monitor]
+      summary: Get data flow metrics
+      parameters:
+        - name: window
+          in: query
+          schema: { type: integer, default: 3600 }
+      responses:
+        200:
+          description: Data flow metrics
+
+  # Settings
+  /internal/settings:
+    get:
+      tags: [Settings]
+      summary: Get platform settings
+      responses:
+        200:
+          description: Platform settings
+    put:
+      tags: [Settings]
+      summary: Update platform settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        200:
+          description: Settings updated
+
+  /internal/audit-log:
+    get:
+      tags: [Settings]
+      summary: Get audit log
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: resourceType
+          in: query
+          schema: { type: string }
+        - name: actor
+          in: query
+          schema: { type: string }
+        - name: fromDate
+          in: query
+          schema: { type: string }
+        - name: toDate
+          in: query
+          schema: { type: string }
+      responses:
+        200:
+          description: Audit log entries
+
+  # Browser
+  /internal/browser/status:
+    get:
+      tags: [Browser]
+      summary: Get browser manager status
+      responses:
+        200:
+          description: Browser manager status
+        502:
+          description: Failed to get status
+
+  /internal/notifications/test/{channel}:
+    post:
+      tags: [Browser]
+      summary: Test notification channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { type: string, enum: [webhook, slack] }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string }
+      responses:
+        200:
+          description: Test succeeded
+        400:
+          description: Test failed
+
+  # Edge API (uplink-edge)
+  /v1/intake:
+    post:
+      tags: [Intake]
+      summary: Submit ingest envelope
+      description: Public endpoint for data ingestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceId, sourceName, records]
+              properties:
+                schemaVersion: { type: string, default: "1.0" }
+                ingestId: { type: string }
+                sourceId: { type: string }
+                sourceName: { type: string }
+                sourceType: { type: string, enum: [api, webhook, email, file, browser, manual, stream] }
+                collectedAt: { type: string, format: date-time }
+                records:
+                  type: array
+                  items:
+                    type: object
+                    required: [contentHash, rawPayload]
+                    properties:
+                      externalId: { type: string }
+                      contentHash: { type: string, minLength: 16 }
+                      rawPayload: {}
+                      suggestedEntityType: { type: string }
+                      observedAt: { type: string, format: date-time }
+                hasMore: { type: boolean, default: false }
+                nextCursor: { type: string }
+                traceId: { type: string }
+      responses:
+        202:
+          description: Envelope queued
+        400:
+          description: Invalid envelope
+        401:
+          description: Unauthorized
+
+  /v1/sources/{sourceId}/trigger:
+    post:
+      tags: [Intake]
+      summary: Trigger collection
+      description: Public endpoint to trigger source collection
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean }
+                triggeredBy: { type: string }
+                reason: { type: string }
+      responses:
+        202:
+          description: Workflow started
+        401:
+          description: Unauthorized
+        404:
+          description: Source not found
+
+  /v1/webhooks/{sourceId}:
+    post:
+      tags: [Intake]
+      summary: Webhook receiver
+      description: Public webhook endpoint with HMAC verification
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        202:
+          description: Webhook accepted
+        401:
+          description: Invalid signature
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+    InternalKey:
+      type: apiKey
+      in: header
+      name: x-uplink-internal-key
+
+security:
+  - InternalKey: []

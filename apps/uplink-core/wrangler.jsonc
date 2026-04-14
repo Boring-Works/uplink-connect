@@ -97,11 +97,14 @@
 				"queue": "uplink-ingest"
 			},
 			{
-				"binding": "DLQ",
+			"binding": "DLQ",
 				"queue": "uplink-ingest-dlq"
-			}
-		]
+		}
+	],
+	"triggers": {
+		"crons": ["*/5 * * * *"]
 	}
+}
 	// Pipelines is in beta. Uncomment to enable analytics sink.
 	// See: https://developers.cloudflare.com/pipelines/
 	// "pipelines": [
