@@ -198,7 +198,8 @@ function fastStableHash(value: unknown): string {
 		hash ^= text.charCodeAt(i);
 		hash = Math.imul(hash, 16777619);
 	}
-	return `fnv1a:${(hash >>> 0).toString(16)}`;
+	const hex = (hash >>> 0).toString(16).padStart(8, "0");
+	return `fnv1a:${hex}:${text.length}`;
 }
 
 function stableStringify(value: unknown): string {

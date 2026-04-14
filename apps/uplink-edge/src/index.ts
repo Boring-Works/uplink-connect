@@ -121,7 +121,7 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 		collectedAt: toIsoNow(),
 		hasMore: false,
 		records: [{
-			contentHash: await computeContentHash(bodyText),
+			contentHash: await computeTextHash(bodyText),
 			rawPayload: payload,
 		}],
 	};
@@ -192,7 +192,7 @@ app.post("/v1/files/:sourceId", async (c) => {
 			},
 		});
 
-		const contentHash = await computeContentHash(new TextDecoder().decode(buffer));
+		const contentHash = await computeBufferHash(buffer);
 
 		const envelope: IngestEnvelope = {
 			schemaVersion: "1.0",
@@ -281,16 +281,39 @@ function ensureDefaults(payload: unknown): IngestEnvelope {
 	};
 }
 
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) {
+		const dummy = "\0".repeat(a.length);
+		let result = 0;
+		for (let i = 0; i < a.length; i++) {
+			result |= a.charCodeAt(i) ^ dummy.charCodeAt(i);
+		}
+		return result === 0;
+	}
+	let result = 0;
+	for (let i = 0; i < a.length; i++) {
+		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return result === 0;
+}
+
 function isAuthorized(request: Request, apiKey: string): boolean {
 	const authHeader = request.headers.get("authorization");
 	if (!authHeader || !authHeader.startsWith("Bearer ")) {
 		return false;
 	}
 	const token = authHeader.slice("Bearer ".length);
-	return token.length > 0 && token === apiKey;
+	return token.length > 0 && timingSafeEqual(token, apiKey);
 }
 
-async function computeContentHash(text: string): Promise<string> {
+async function computeBufferHash(buffer: ArrayBuffer): Promise<string> {
+	const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+	return Array.from(new Uint8Array(hashBuffer))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+}
+
+async function computeTextHash(text: string): Promise<string> {
 	const encoder = new TextEncoder();
 	const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(text));
 	return Array.from(new Uint8Array(hashBuffer))

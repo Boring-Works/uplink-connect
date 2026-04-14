@@ -85,6 +85,34 @@ async function runSyntheticMonitoring(env: Env): Promise<void> {
 	}
 }
 
+async function triggerScheduledSources(env: Env): Promise<void> {
+	// Auto-trigger public data sources on schedule
+	const scheduledSources = [
+		{ sourceId: "usgs-earthquakes-hourly", cron: "0 * * * *" }, // Every hour
+	];
+
+	for (const source of scheduledSources) {
+		try {
+			const res = await fetch(`https://uplink-core.codyboring.workers.dev/internal/sources/${source.sourceId}/trigger`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-uplink-internal-key": env.CORE_INTERNAL_KEY ?? "",
+				},
+				body: JSON.stringify({
+					triggeredBy: "scheduled",
+					reason: "Hourly auto-collection",
+				}),
+			});
+			const body = await res.json().catch(() => ({}));
+			console.log(`[scheduled] Triggered ${source.sourceId}`, { status: res.status, body });
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(`[scheduled] Failed to trigger ${source.sourceId}`, { error: message });
+		}
+	}
+}
+
 export default {
 	async fetch(request: Request, env: Env, executionCtx: ExecutionContext): Promise<Response> {
 		return app.fetch(request, env, executionCtx);
@@ -94,8 +122,12 @@ export default {
 		await processQueueBatch(batch, env);
 	},
 
-	async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+	async scheduled(controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
 		await runSyntheticMonitoring(env);
+		// Also trigger hourly source collection at the top of each hour
+		if (controller.cron === "0 * * * *") {
+			await triggerScheduledSources(env);
+		}
 	},
 };
 

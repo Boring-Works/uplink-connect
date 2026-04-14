@@ -10,12 +10,32 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/health", (c) => c.json({ ok: true, service: "uplink-ops", now: new Date().toISOString() }));
 
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) {
+		const dummy = "\0".repeat(a.length);
+		let result = 0;
+		for (let i = 0; i < a.length; i++) {
+			result |= a.charCodeAt(i) ^ dummy.charCodeAt(i);
+		}
+		return result === 0;
+	}
+	let result = 0;
+	for (let i = 0; i < a.length; i++) {
+		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return result === 0;
+}
+
 app.use("/v1/*", async (c, next) => {
 	if (!c.env.OPS_API_KEY) {
 		return c.json({ error: "OPS_API_KEY not configured" }, 500);
 	}
 	const header = c.req.header("authorization");
-	if (!header || !header.startsWith("Bearer ") || header.slice(7) !== c.env.OPS_API_KEY) {
+	if (!header || !header.startsWith("Bearer ")) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	const token = header.slice("Bearer ".length);
+	if (!timingSafeEqual(token, c.env.OPS_API_KEY)) {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 	await next();

@@ -13,10 +13,10 @@ interface DashboardMessage {
 }
 
 const BROADCAST_INTERVAL_MS = 5000;
+const ALARM_KEY = "dashboard_alarm_scheduled";
 
 export class DashboardStreamDO extends DurableObject<Env> {
 	private clients: Map<WebSocket, DashboardClient> = new Map();
-	private broadcastTimer: number | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -37,9 +37,7 @@ export class DashboardStreamDO extends DurableObject<Env> {
 		this.ctx.acceptWebSocket(server);
 		this.clients.set(server, { ws: server, subscribedTopics: new Set() });
 
-		if (this.broadcastTimer === null) {
-			this.startBroadcasting();
-		}
+		await this.ensureAlarm();
 
 		return new Response(null, { status: 101, webSocket: client });
 	}
@@ -77,16 +75,31 @@ export class DashboardStreamDO extends DurableObject<Env> {
 
 	async webSocketClose(ws: WebSocket) {
 		this.clients.delete(ws);
-		if (this.clients.size === 0 && this.broadcastTimer !== null) {
-			clearInterval(this.broadcastTimer);
-			this.broadcastTimer = null;
+		if (this.clients.size === 0) {
+			await this.ctx.storage.delete(ALARM_KEY);
+			const alarm = await this.ctx.storage.getAlarm();
+			if (alarm) {
+				await this.ctx.storage.deleteAlarm();
+			}
 		}
 	}
 
-	private startBroadcasting(): void {
-		this.broadcastTimer = setInterval(() => {
-			this.broadcastMetrics();
-		}, BROADCAST_INTERVAL_MS) as unknown as number;
+	async alarm(): Promise<void> {
+		if (this.clients.size === 0) {
+			await this.ctx.storage.delete(ALARM_KEY);
+			return;
+		}
+
+		await this.broadcastMetrics();
+		await this.ctx.storage.setAlarm(Date.now() + BROADCAST_INTERVAL_MS);
+	}
+
+	private async ensureAlarm(): Promise<void> {
+		const scheduled = await this.ctx.storage.get<boolean>(ALARM_KEY);
+		if (!scheduled) {
+			await this.ctx.storage.put(ALARM_KEY, true);
+			await this.ctx.storage.setAlarm(Date.now() + BROADCAST_INTERVAL_MS);
+		}
 	}
 
 	private async broadcastMetrics(): Promise<void> {
@@ -124,9 +137,10 @@ export class DashboardStreamDO extends DurableObject<Env> {
 			`).all(),
 			db.prepare(`
 				SELECT
-					SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-					SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing
-				FROM ingest_queue_status
+					SUM(CASE WHEN status IN ('received', 'enqueued') THEN 1 ELSE 0 END) as pending,
+					SUM(CASE WHEN status IN ('collecting', 'normalizing') THEN 1 ELSE 0 END) as processing
+				FROM ingest_runs
+				WHERE created_at > unixepoch() - 3600
 			`).first<{ pending: number; processing: number }>(),
 			db.prepare("SELECT COUNT(*) as count FROM alerts_active WHERE resolved_at IS NULL").first<{ count: number }>(),
 		]);

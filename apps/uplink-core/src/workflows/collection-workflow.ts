@@ -50,7 +50,7 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 					metadata: sourceLookup.config.metadata,
 				},
 				{
-					fetchFn: fetch,
+					fetchFn: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
 					browserFetcher: this.env.UPLINK_BROWSER,
 					nowIso: toIsoNow,
 				},

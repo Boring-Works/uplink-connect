@@ -18,14 +18,16 @@ interface RetryJob {
 	retryAfter: number;
 }
 
+const RETRY_INTERVAL_MS = 10_000;
+const MAX_RETRY_QUEUE_SIZE = 1000;
+const ALARM_KEY = "notification_alarm_scheduled";
+
 export class NotificationDispatcher extends DurableObject {
 	private rateLimits: Map<string, RateLimitState> = new Map();
 	private retryQueue: RetryJob[] = [];
-	private retryTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.startRetryLoop();
 	}
 
 	async dispatch(
@@ -65,7 +67,7 @@ export class NotificationDispatcher extends DurableObject {
 
 		// Queue throttled notifications for retry
 		for (const route of throttledRoutes) {
-			this.retryQueue.push({
+			this.enqueueRetry({
 				alert,
 				providers,
 				routes: [route],
@@ -78,7 +80,7 @@ export class NotificationDispatcher extends DurableObject {
 		// Queue failed deliveries for retry
 		for (const delivery of result.deliveries) {
 			if (!delivery.sent) {
-				this.retryQueue.push({
+				this.enqueueRetry({
 					alert,
 					providers,
 					routes: activeRoutes.filter((r) => r.providerId === delivery.providerId),
@@ -89,6 +91,8 @@ export class NotificationDispatcher extends DurableObject {
 			}
 		}
 
+		await this.ensureAlarm();
+
 		return {
 			sent: result.sent,
 			failed: result.failed,
@@ -97,20 +101,37 @@ export class NotificationDispatcher extends DurableObject {
 		};
 	}
 
-	private startRetryLoop(): void {
-		if (this.retryTimer) return;
-
-		this.retryTimer = setInterval(() => {
-			this.processRetries().catch((err) => {
-				console.error("[NotificationDispatcher] Retry loop error:", err);
-			});
-		}, 10_000);
+	async alarm(): Promise<void> {
+		const hadWork = await this.processRetries();
+		if (hadWork || this.retryQueue.length > 0) {
+			await this.ctx.storage.setAlarm(Date.now() + RETRY_INTERVAL_MS);
+		} else {
+			await this.ctx.storage.delete(ALARM_KEY);
+		}
 	}
 
-	private async processRetries(): Promise<void> {
+	private enqueueRetry(job: RetryJob): void {
+		if (this.retryQueue.length >= MAX_RETRY_QUEUE_SIZE) {
+			console.error("[NotificationDispatcher] Retry queue full, dropping oldest job");
+			this.retryQueue.shift();
+		}
+		this.retryQueue.push(job);
+	}
+
+	private async ensureAlarm(): Promise<void> {
+		const scheduled = await this.ctx.storage.get<boolean>(ALARM_KEY);
+		if (!scheduled && this.retryQueue.length > 0) {
+			await this.ctx.storage.put(ALARM_KEY, true);
+			await this.ctx.storage.setAlarm(Date.now() + RETRY_INTERVAL_MS);
+		}
+	}
+
+	private async processRetries(): Promise<boolean> {
 		const now = Date.now();
 		const ready = this.retryQueue.filter((job) => job.retryAfter <= now);
 		this.retryQueue = this.retryQueue.filter((job) => job.retryAfter > now);
+
+		if (ready.length === 0) return false;
 
 		for (const job of ready) {
 			if (job.attempt > 3) {
@@ -122,7 +143,7 @@ export class NotificationDispatcher extends DurableObject {
 
 			for (const delivery of result.deliveries) {
 				if (!delivery.sent) {
-					this.retryQueue.push({
+					this.enqueueRetry({
 						...job,
 						routes: job.routes.filter((r) => r.providerId === delivery.providerId),
 						attempt: job.attempt + 1,
@@ -131,5 +152,7 @@ export class NotificationDispatcher extends DurableObject {
 				}
 			}
 		}
+
+		return true;
 	}
 }
