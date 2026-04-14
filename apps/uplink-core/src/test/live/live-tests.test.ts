@@ -68,44 +68,34 @@ describe("Live Tests - Health Endpoints", () => {
 });
 
 describe("Live Tests - Dashboard", () => {
-	it("dashboard HTML renders without error", async () => {
+	it("dashboard gate renders without error", async () => {
 		const response = await fetch(`${ENDPOINTS.core}/dashboard`);
 		expect(response.status).toBe(200);
 		expect(response.headers.get("content-type")).toContain("text/html");
 		
 		const html = await response.text();
-		expect(html).toContain("Uplink Connect");
-		expect(html).toContain("Data Ingestion Platform Dashboard");
+		expect(html).toContain("Uplink Connect Dashboard");
+		expect(html).toContain("Enter the dashboard password");
 		expect(html).not.toContain("Dashboard Error");
 	});
 
-	it("dashboard contains all metric sections", async () => {
+	it("dashboard gate contains login form", async () => {
 		const response = await fetch(`${ENDPOINTS.core}/dashboard`);
 		const html = await response.text();
 		
-		expect(html).toContain("Total Sources");
-		expect(html).toContain("Runs (24h)");
-		expect(html).toContain("Queue Lag");
-		expect(html).toContain("Active Alerts");
-		expect(html).toContain("Data Pipeline Flow");
-		expect(html).toContain("Component Health");
+		expect(html).toContain('method="POST"');
+		expect(html).toContain('name="password"');
+		expect(html).toContain('type="submit"');
 	});
 
-	it("dashboard has navigation links", async () => {
-		const response = await fetch(`${ENDPOINTS.core}/dashboard`);
-		const html = await response.text();
-		
-		expect(html).toContain('href="/internal/dashboard/v2"');
-		expect(html).toContain('href="/internal/health/topology"');
-		expect(html).toContain('href="/internal/health/components"');
-		expect(html).toContain('href="/internal/settings"');
+	it("dashboard v2 API requires auth", async () => {
+		const response = await fetch(`${ENDPOINTS.core}/internal/dashboard/v2`);
+		expect(response.status).toBe(401);
 	});
 
-	it("dashboard has auto-refresh meta tag", async () => {
-		const response = await fetch(`${ENDPOINTS.core}/dashboard`);
-		const html = await response.text();
-		
-		expect(html).toContain('http-equiv="refresh"');
+	it("health topology requires auth", async () => {
+		const response = await fetch(`${ENDPOINTS.core}/internal/health/topology`);
+		expect(response.status).toBe(401);
 	});
 });
 
