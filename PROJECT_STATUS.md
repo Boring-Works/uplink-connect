@@ -220,7 +220,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | TypeScript Source Files | 47 |
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
-| Test Coverage | 554 tests |
+| Test Coverage | 587 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Last Verified | April 14, 2026 |
@@ -254,6 +254,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ KV-based alert deduplication
 - ✅ Error deduplication by SHA-256 hash
 - ✅ DO concurrency safety with `blockConcurrencyWhile`
+- ✅ Safe JSON serialization for all persistence paths (handles circular refs, BigInt, Errors)
+- ✅ Automatic secret redaction in logs and stored data
+- ✅ Non-transient HTTP error fast-fail (400/401/404/422/501 = no retry)
+- ✅ Connection error detection for smarter retry classification
 
 ---
 
@@ -330,6 +334,13 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - **DO concurrency safety** - All POST mutations in `SourceCoordinator` are wrapped with `blockConcurrencyWhile` for atomicity
 - **AI binding fix** - Added missing `"ai": { "binding": "AI" }` to `wrangler.jsonc`; `ai-binding` health check now passes
 
+### Promptfoo-Inspired Patterns (Data Safety & Resilience)
+- **Safe JSON serialization** - `safeJsonStringify` handles circular references, BigInt, functions, and Errors. Applied to all D1/R2 persistence paths
+- **Secret sanitization** - `sanitizeObject` and `sanitizeUrl` redact API keys, tokens, passwords, AWS credentials from logs and stored data
+- **Non-transient HTTP error detection** - `classifyError` fast-paths on HTTP status: 400/401/404/422/501 fail immediately; 429 gets 60s delay; 502/503/504 are retryable
+- **Connection error detection** - `isTransientConnectionError` recognizes ECONNRESET, ETIMEDOUT, fetch failed, gateway errors, Worker CPU exceeded
+- **JSON extraction from LLM outputs** - `extractJsonObjects` / `extractFirstJsonObject` for parsing structured Workers AI output
+
 ### Security Audit Fixes
 - **Password form submission** changed from GET query param to POST form data
 - **Secure cookie flag** added to dashboard auth cookie for HTTPS deployments
@@ -385,4 +396,4 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ### Documentation
 - **OpenAPI 3.0 Spec**: Complete API specification at `openapi.yml`
-- **554 Tests**: All passing across unit, integration, and e2e suites
+- **587 Tests**: All passing across unit, integration, e2e, and utility suites

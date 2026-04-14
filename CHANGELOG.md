@@ -58,7 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Testing
 - Added 35+ new tests across all suites
-- Total test count: 554+ (up from 519)
+- Added 43 new utility tests in `@uplink/contracts` for safe JSON, sanitization, and HTTP error classification
+- Added 10 new integration tests in core for logging sanitization and HTTP-status-based retry logic
+- Total test count: 587+ (up from 519)
 
 #### Real Data Sources
 - **Multi-source public API ingestion** - 4 live sources proving platform versatility
@@ -75,6 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **KV alert deduplication** - `NotificationDispatcher` checks `ALERT_CACHE` KV before sending alerts, 1-hour TTL prevents alert spam
 - **Error deduplication by hash** - `recordIngestError` computes SHA-256 hash of cleaned message and increments `occurrence_count` for duplicate unresolved errors instead of inserting new rows. New migration `0011_error_dedup_hash.sql`
 - **DO concurrency safety** - All POST mutations in `SourceCoordinator` are wrapped with `blockConcurrencyWhile` for atomicity
+
+#### Promptfoo-Inspired Patterns (Data Safety & Resilience)
+- **Safe JSON serialization** - `safeJsonStringify` in `@uplink/contracts` handles circular references, BigInt, functions, and Errors gracefully. Used for all D1/R2 persistence paths
+- **Secret sanitization** - `sanitizeObject` and `sanitizeUrl` automatically redact API keys, tokens, passwords, and AWS credentials from logs and stored data. Integrated into the structured `Logger`
+- **Non-transient HTTP error detection** - `classifyError` now fast-paths on HTTP status codes: 400/401/404/422/501 fail immediately without retry; 429 gets 60s delay; 502/503/504 are retryable. Extracts status from `Response`, `error.status`, or error messages
+- **Connection error detection** - `isTransientConnectionError` recognizes ECONNRESET, ETIMEDOUT, fetch failed, gateway errors, and Worker CPU exceeded
+- **JSON extraction from LLM outputs** - `extractJsonObjects` and `extractFirstJsonObject` for parsing structured output from Workers AI
 
 #### Security & Audit Fixes
 - **Dashboard auth** - Password submission changed from GET query param to POST form data
