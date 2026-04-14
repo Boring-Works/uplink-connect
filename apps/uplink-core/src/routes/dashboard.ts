@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { toIsoNow } from "@uplink/contracts";
+import { toIsoNow, safeJsonStringify } from "@uplink/contracts";
 import {
 	getSystemMetrics,
 	getQueueMetrics,
 	getEntityMetrics,
+	getAggregatedSourceMetrics,
 } from "../lib/metrics";
 import { listActiveAlerts } from "../lib/alerting";
 import {
@@ -12,6 +13,7 @@ import {
 	getPipelineTopology,
 } from "../lib/health-monitor";
 import { ensureDashboardAuth } from "../lib/dashboard-auth";
+import { listIngestErrors } from "../lib/db";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -81,6 +83,8 @@ app.get("/internal/dashboard/v2", async (c) => {
 		sources,
 		alerts,
 		recentRuns,
+		errorsResult,
+		sourceMetrics,
 	] = await Promise.all([
 		getSystemMetrics(c.env.CONTROL_DB),
 		getQueueMetrics(c.env.CONTROL_DB),
@@ -95,6 +99,8 @@ app.get("/internal/dashboard/v2", async (c) => {
 			WHERE created_at > unixepoch() - ?
 			GROUP BY status
 		`).bind(effectiveWindow).all(),
+			listIngestErrors(c.env.CONTROL_DB, { status: "pending", limit: 10, offset: 0 }),
+		getAggregatedSourceMetrics(c.env.CONTROL_DB, effectiveWindow, 10000).catch(() => []),
 	]);
 
 	const runSummary: Record<string, number> = {};
@@ -138,6 +144,9 @@ app.get("/internal/dashboard/v2", async (c) => {
 				critical: alerts.filter(a => a.severity === "critical").length,
 				warning: alerts.filter(a => a.severity === "warning").length,
 			},
+			errors: {
+				pending: errorsResult.total,
+			},
 		},
 		pipeline: pipelineTopology,
 		components: components.map(c => ({
@@ -156,6 +165,24 @@ app.get("/internal/dashboard/v2", async (c) => {
 			message: a.message,
 			sourceId: a.sourceId,
 			createdAt: a.createdAt,
+		})),
+		recentErrors: errorsResult.errors.map(e => ({
+			errorId: e.errorId,
+			runId: e.runId,
+			sourceId: e.sourceId,
+			phase: e.phase,
+			errorMessage: e.errorMessage,
+			status: e.status,
+			retryCount: e.retryCount,
+			createdAt: e.createdAt,
+		})),
+		sourceMetrics: sourceMetrics.map(m => ({
+			sourceId: m.sourceId,
+			totalRuns: m.totalRuns,
+			successCount: m.successCount,
+			failureCount: m.failureCount,
+			errorCount: m.errorCount,
+			avgProcessingMs: m.avgProcessingMs,
 		})),
 	});
 });
@@ -181,6 +208,10 @@ app.get("/dashboard", async (c) => {
 			recentRuns,
 			runRows,
 			artifactCount,
+			errorsResult,
+			sourceMetrics,
+			dlqCount,
+			oldestStuckRun,
 		] = await Promise.all([
 			getSystemMetrics(c.env.CONTROL_DB),
 			getQueueMetrics(c.env.CONTROL_DB),
@@ -202,6 +233,18 @@ app.get("/dashboard", async (c) => {
 				LIMIT 10
 			`).all(),
 			c.env.CONTROL_DB.prepare("SELECT COUNT(*) as count FROM raw_artifacts").first<{ count: number }>(),
+		listIngestErrors(c.env.CONTROL_DB, { status: "pending", limit: 10, offset: 0 }),
+			getAggregatedSourceMetrics(c.env.CONTROL_DB, effectiveWindow, 10000).catch(() => []),
+			c.env.CONTROL_DB.prepare(`
+				SELECT COUNT(*) as count FROM ingest_errors WHERE status = 'dead_letter'
+			`).first<{ count: number }>(),
+			c.env.CONTROL_DB.prepare(`
+				SELECT run_id, source_name, status, created_at
+				FROM ingest_runs
+				WHERE status IN ('enqueued', 'collecting')
+				ORDER BY created_at ASC
+				LIMIT 1
+			`).first<{ run_id: string; source_name: string; status: string; created_at: number }>(),
 		]);
 
 		const runSummary: Record<string, number> = {};
@@ -236,6 +279,7 @@ app.get("/dashboard", async (c) => {
 		const activeAlertCount = alerts.length;
 		const criticalAlertCount = alerts.filter(a => a.severity === "critical").length;
 		const warningAlertCount = alerts.filter(a => a.severity === "warning").length;
+		const pendingErrorCount = errorsResult.total;
 
 		const pipelineStagesHtml = pipelineTopology?.stages.map(stage => {
 			const rate = stage.outputRate ? `${stage.outputRate}/hr` : '<span style="color:var(--graphite);font-size:0.75rem;">no data</span>';
@@ -252,17 +296,34 @@ app.get("/dashboard", async (c) => {
 		const alertsHtml = alerts?.length > 0
 			? alerts.slice(0, 5).map(alert => {
 				const date = new Date(alert.createdAt * 1000).toLocaleString();
-				return `<div class="alert-item ${alert.severity}"><div class="alert-title">${escapeHtml(alert.message)}</div><div class="alert-meta">${escapeHtml(alert.alertType)} · ${date}</div></div>`;
+				return `<div class="alert-item ${alert.severity}" data-alert-id="${escapeHtml(alert.alertId)}">
+					<div class="alert-title">${escapeHtml(alert.message)}</div>
+					<div class="alert-meta">${escapeHtml(alert.alertType)} · ${date}</div>
+					<div class="alert-actions">
+						<button class="btn btn-sm btn-secondary" onclick="ackAlert('${escapeHtml(alert.alertId)}')">Ack</button>
+						<button class="btn btn-sm btn-primary" onclick="resolveAlert('${escapeHtml(alert.alertId)}')">Resolve</button>
+					</div>
+				</div>`;
 			}).join("")
 			: '<div class="empty-state">No active alerts</div>';
+
+		const sourceMetricsMap = new Map(sourceMetrics.map(m => [m.sourceId, m]));
 
 		const sourcesHtml = (sources.results ?? []).slice(0, 8).map((s: unknown) => {
 			const src = s as { source_id: string; name: string; type: string; status: string };
 			const statusClass = src.status === "active" ? "status-active" : src.status === "paused" ? "status-paused" : "status-inactive";
+			const metrics = sourceMetricsMap.get(src.source_id);
+			const successRate = metrics && metrics.totalRuns > 0
+				? Math.round((metrics.successCount / metrics.totalRuns) * 100)
+				: null;
+			const metricsHtml = metrics
+				? `<div class="source-metrics">${metrics.totalRuns} runs · ${successRate}% success ${metrics.errorCount > 0 ? `· <span class="trend-down">${metrics.errorCount} errors</span>` : ""}</div>`
+				: "";
 			return `<div class="source-row">
 				<div class="source-info">
 					<div class="source-name">${escapeHtml(src.name)}</div>
 					<div class="source-meta">${src.type} · <span class="${statusClass}">${src.status}</span></div>
+					${metricsHtml}
 				</div>
 				<div class="source-actions">
 					<button class="btn btn-sm btn-secondary" onclick="triggerSource('${escapeHtml(src.source_id)}')">Trigger</button>
@@ -275,14 +336,36 @@ app.get("/dashboard", async (c) => {
 			const statusClass = `run-status-${run.status}`;
 			const time = new Date(run.created_at * 1000).toLocaleString();
 			const shortId = run.run_id.split(':').pop() || run.run_id;
+			const replayBtn = run.status === 'failed'
+				? `<button class="btn btn-sm btn-secondary" onclick="replayRun('${escapeHtml(run.run_id)}')">Replay</button>`
+				: '';
 			return `<tr>
 				<td><div class="mono" title="${escapeHtml(run.run_id)}">${escapeHtml(shortId.slice(0, 14))}...</div></td>
 				<td>${escapeHtml(run.source_name)}</td>
 				<td><span class="badge ${statusClass}">${escapeHtml(run.status)}</span></td>
 				<td>${run.record_count}</td>
 				<td class="mono">${time}</td>
+				<td>${replayBtn}</td>
 			</tr>`;
-		}).join("") || '<tr><td colspan="5" class="empty-state">No runs yet</td></tr>';
+		}).join("") || '<tr><td colspan="6" class="empty-state">No runs yet</td></tr>';
+
+		const errorsHtml = errorsResult.errors.length > 0
+			? errorsResult.errors.slice(0, 5).map(err => {
+				const date = new Date(err.createdAt).toLocaleString();
+				const msg = err.errorMessage.length > 80 ? err.errorMessage.slice(0, 80) + "..." : err.errorMessage;
+				return `<div class="error-item">
+					<div class="error-title">${escapeHtml(msg)}</div>
+					<div class="error-meta">${escapeHtml(err.phase)} · ${date} · ${err.retryCount} retries</div>
+					<div class="error-actions">
+						<button class="btn btn-sm btn-secondary" onclick="retryError('${escapeHtml(err.errorId)}')">Retry</button>
+					</div>
+				</div>`;
+			}).join("")
+			: '<div class="empty-state">No pending errors</div>';
+
+		const stuckRunHtml = oldestStuckRun
+			? `<div class="stuck-run">Oldest stuck: <span class="mono">${escapeHtml(oldestStuckRun.source_name)}</span> · ${escapeHtml(oldestStuckRun.status)} · ${Math.round((Date.now() / 1000 - oldestStuckRun.created_at) / 60)}m</div>`
+			: "";
 
 		const wsProtocol = c.req.url.startsWith("https:") ? "wss:" : "ws:";
 		const wsHost = new URL(c.req.url).host;
@@ -303,11 +386,17 @@ app.get("/dashboard", async (c) => {
 			criticalAlertCount,
 			warningAlertCount,
 			artifactCount: artifactCount?.count ?? 0,
+			pendingErrorCount,
+			dlqCount: dlqCount?.count ?? 0,
 			pipelineStagesHtml,
 			componentsHtml,
 			alertsHtml,
 			sourcesHtml,
 			runsHtml,
+			errorsHtml,
+			stuckRunHtml,
+			entityTotal: entityMetrics.totalEntities ?? 0,
+			entityNewToday: entityMetrics.newToday ?? 0,
 			wsUrl,
 		});
 
@@ -348,11 +437,17 @@ interface DashboardHtmlParams {
 	criticalAlertCount: number;
 	warningAlertCount: number;
 	artifactCount: number;
+	pendingErrorCount: number;
+	dlqCount: number;
 	pipelineStagesHtml: string;
 	componentsHtml: string;
 	alertsHtml: string;
 	sourcesHtml: string;
 	runsHtml: string;
+	errorsHtml: string;
+	stuckRunHtml: string;
+	entityTotal: number;
+	entityNewToday: number;
 	wsUrl: string;
 }
 
@@ -397,7 +492,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			font-family: 'IBM Plex Mono', ui-monospace, monospace;
 			font-size: 0.9em;
 		}
-		.container { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+		.container { max-width: 1400px; margin: 0 auto; padding: 24px 24px 48px; }
 		header {
 			background: linear-gradient(160deg, var(--workbench) 0%, var(--sawdust) 100%);
 			border: 1px solid var(--grain);
@@ -442,7 +537,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		.status-unhealthy { background: rgba(155,44,44,0.12); color: var(--danger); border-color: rgba(155,44,44,0.2); }
 		.grid {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 			gap: 16px;
 			margin-bottom: 20px;
 		}
@@ -533,7 +628,18 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		.alert-item.critical { border-left-color: var(--danger); }
 		.alert-item.warning { border-left-color: var(--warning); }
 		.alert-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
-		.alert-meta { font-size: 0.8rem; color: var(--graphite); }
+		.alert-meta { font-size: 0.8rem; color: var(--graphite); margin-bottom: 8px; }
+		.alert-actions { display: flex; gap: 8px; }
+		.error-item {
+			background: var(--white);
+			padding: 14px;
+			border-radius: 10px;
+			margin-bottom: 10px;
+			border-left: 3px solid var(--danger);
+		}
+		.error-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+		.error-meta { font-size: 0.8rem; color: var(--graphite); margin-bottom: 8px; }
+		.error-actions { display: flex; gap: 8px; }
 		.nav {
 			display: flex;
 			gap: 10px;
@@ -566,6 +672,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		.source-row:last-child { border-bottom: none; }
 		.source-name { font-weight: 600; font-size: 0.9rem; }
 		.source-meta { font-size: 0.8rem; color: var(--graphite); margin-top: 2px; }
+		.source-metrics { font-size: 0.75rem; color: var(--graphite); margin-top: 2px; }
 		.status-active { color: var(--success); font-weight: 600; }
 		.status-paused { color: var(--warning); font-weight: 600; }
 		.status-inactive { color: var(--graphite); }
@@ -669,6 +776,32 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			margin-bottom: 10px;
 			color: var(--carbon);
 		}
+		.stuck-run {
+			font-size: 0.85rem;
+			color: var(--warning);
+			margin-top: 8px;
+			padding: 8px 12px;
+			background: rgba(179,89,0,0.08);
+			border-radius: 8px;
+		}
+		.dashboard-grid {
+			display: grid;
+			grid-template-columns: repeat(12, 1fr);
+			gap: 16px;
+		}
+		.dashboard-grid .card {
+			grid-column: span 6;
+		}
+		@media (max-width: 900px) {
+			.dashboard-grid .card { grid-column: span 12; }
+		}
+		.metric-row {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+			gap: 12px;
+			margin-bottom: 16px;
+		}
+		.metric-row .card { margin-bottom: 0; }
 	</style>
 </head>
 <body>
@@ -689,7 +822,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			<button onclick="location.reload()">Refresh</button>
 		</div>
 
-		<div class="grid">
+		<div class="metric-row">
 			<div class="card" data-metric="sources">
 				<h3>Total Sources</h3>
 				<div class="metric">${p.totalSources}</div>
@@ -702,7 +835,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				<div class="metric">${p.totalRuns24h}</div>
 				<div class="metric-sub">
 					<span class="${p.runTrendDirection === 'up' ? 'trend-up' : 'trend-down'}">
-						${p.runTrendDirection === 'up' ? '↑' : '↓'} ${p.runTrendPct}%
+						${p.runTrendDirection === 'up' ? '&#8593;' : '&#8595;'} ${p.runTrendPct}%
 					</span> vs previous period
 				</div>
 			</div>
@@ -710,6 +843,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				<h3>Queue Lag</h3>
 				<div class="metric">${p.queueLagMin}m</div>
 				<div class="metric-sub">${p.pendingCount} pending · ${p.processingCount} processing</div>
+				${p.stuckRunHtml}
 			</div>
 			<div class="card" data-metric="alerts">
 				<h3>Active Alerts</h3>
@@ -718,10 +852,15 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 					<span class="trend-down">${p.criticalAlertCount} critical</span> · ${p.warningAlertCount} warning
 				</div>
 			</div>
-			<div class="card" data-metric="artifacts">
-				<h3>Artifacts</h3>
-				<div class="metric">${p.artifactCount}</div>
-				<div class="metric-sub">Total stored in R2</div>
+			<div class="card" data-metric="errors">
+				<h3>Pending Errors</h3>
+				<div class="metric">${p.pendingErrorCount}</div>
+				<div class="metric-sub">${p.dlqCount} in DLQ</div>
+			</div>
+			<div class="card" data-metric="entities">
+				<h3>Entities</h3>
+				<div class="metric">${p.entityTotal}</div>
+				<div class="metric-sub">+${p.entityNewToday} new today · ${p.artifactCount} artifacts</div>
 			</div>
 		</div>
 
@@ -732,7 +871,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			</div>
 		</div>
 
-		<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+		<div class="dashboard-grid">
 			<div class="card">
 				<h3>Component Health</h3>
 				<div class="components">
@@ -745,13 +884,10 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 					${p.alertsHtml}
 				</div>
 			</div>
-		</div>
-
-		<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
 			<div class="card">
 				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
 					<h3>Sources</h3>
-					<a href="/scheduler" style="font-size:0.8rem;color:var(--forge);font-weight:600;">Manage →</a>
+					<a href="/scheduler" style="font-size:0.8rem;color:var(--forge);font-weight:600;">Manage &#8594;</a>
 				</div>
 				<div>${p.sourcesHtml}</div>
 			</div>
@@ -760,11 +896,15 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				<div style="overflow-x:auto;">
 					<table>
 						<thead>
-							<tr><th>Run</th><th>Source</th><th>Status</th><th>Records</th><th>Time</th></tr>
+							<tr><th>Run</th><th>Source</th><th>Status</th><th>Records</th><th>Time</th><th>Action</th></tr>
 						</thead>
 						<tbody>${p.runsHtml}</tbody>
 					</table>
 				</div>
+			</div>
+			<div class="card" style="grid-column: span 12;">
+				<h3>Recent Errors</h3>
+				<div>${p.errorsHtml}</div>
 			</div>
 		</div>
 
@@ -801,6 +941,51 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				showToast('Triggered ' + sourceId, 'success');
 			} catch (e) {
 				showToast('Trigger failed', 'error');
+			}
+		};
+
+		window.replayRun = async function(runId) {
+			try {
+				const res = await fetch('/internal/runs/' + runId + '/replay', { method: 'POST' });
+				if (!res.ok) throw new Error('Replay failed');
+				showToast('Replay initiated', 'success');
+			} catch (e) {
+				showToast('Replay failed', 'error');
+			}
+		};
+
+		window.retryError = async function(errorId) {
+			try {
+				const res = await fetch('/internal/errors/' + errorId + '/retry', { method: 'POST' });
+				if (!res.ok) throw new Error('Retry failed');
+				showToast('Retry initiated', 'success');
+				setTimeout(() => location.reload(), 1500);
+			} catch (e) {
+				showToast('Retry failed', 'error');
+			}
+		};
+
+		window.ackAlert = async function(alertId) {
+			try {
+				const res = await fetch('/internal/alerts/' + alertId + '/acknowledge', { method: 'POST' });
+				if (!res.ok) throw new Error('Ack failed');
+				showToast('Alert acknowledged', 'success');
+				const el = document.querySelector('.alert-item[data-alert-id="' + alertId + '"]');
+				if (el) el.style.opacity = '0.5';
+			} catch (e) {
+				showToast('Ack failed', 'error');
+			}
+		};
+
+		window.resolveAlert = async function(alertId) {
+			try {
+				const res = await fetch('/internal/alerts/' + alertId + '/resolve', { method: 'POST' });
+				if (!res.ok) throw new Error('Resolve failed');
+				showToast('Alert resolved', 'success');
+				const el = document.querySelector('.alert-item[data-alert-id="' + alertId + '"]');
+				if (el) el.remove();
+			} catch (e) {
+				showToast('Resolve failed', 'error');
 			}
 		};
 
@@ -879,6 +1064,9 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			}
 			if (data.alerts) {
 				updateMetric('alerts', data.alerts.active || 0);
+			}
+			if (data.errors) {
+				updateMetric('errors', data.errors.pending || 0);
 			}
 		}
 

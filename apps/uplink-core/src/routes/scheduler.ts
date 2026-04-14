@@ -94,6 +94,37 @@ app.delete("/internal/schedules/:scheduleId", async (c) => {
 	return c.json({ ok: true });
 });
 
+// API: Bulk delete schedules
+app.post("/internal/schedules/bulk-delete", async (c) => {
+	const body = await c.req.json().catch(() => null);
+	const ids = (body as { scheduleIds?: string[] })?.scheduleIds;
+	if (!Array.isArray(ids) || ids.length === 0) {
+		return c.json({ error: "scheduleIds array required" }, 400);
+	}
+	let deleted = 0;
+	for (const id of ids) {
+		const result = await deleteSourceSchedule(c.env.CONTROL_DB, id);
+		if (result) deleted++;
+	}
+	return c.json({ ok: true, deleted });
+});
+
+// API: Bulk enable/disable schedules
+app.post("/internal/schedules/bulk-toggle", async (c) => {
+	const body = await c.req.json().catch(() => null);
+	const ids = (body as { scheduleIds?: string[] })?.scheduleIds;
+	const enabled = (body as { enabled?: boolean }).enabled;
+	if (!Array.isArray(ids) || ids.length === 0 || typeof enabled !== "boolean") {
+		return c.json({ error: "scheduleIds array and enabled boolean required" }, 400);
+	}
+	let updated = 0;
+	for (const id of ids) {
+		const result = await updateSourceSchedule(c.env.CONTROL_DB, id, { enabled });
+		if (result) updated++;
+	}
+	return c.json({ ok: true, updated });
+});
+
 // API: Trigger a schedule now (manual run for that schedule's source)
 app.post("/internal/schedules/:scheduleId/trigger", async (c) => {
 	const schedule = await getSourceSchedule(c.env.CONTROL_DB, c.req.param("scheduleId"));
@@ -139,11 +170,19 @@ app.get("/scheduler", async (c) => {
 	});
 	if (authCheck) return authCheck;
 
-	const [schedulesResult, sourcesResult] = await Promise.all([
+	const [schedulesResult, sourcesResult, recentRunsResult] = await Promise.all([
 		listSourceSchedules(c.env.CONTROL_DB),
 		c.env.CONTROL_DB
 			.prepare("SELECT source_id, name, type, status FROM source_configs WHERE deleted_at IS NULL ORDER BY name")
 			.all<{ source_id: string; name: string; type: string; status: string }>(),
+		c.env.CONTROL_DB
+			.prepare(`
+				SELECT source_id, status, created_at
+				FROM ingest_runs
+				ORDER BY created_at DESC
+				LIMIT 200
+			`)
+			.all<{ source_id: string; status: string; created_at: number }>(),
 	]);
 
 	const schedules = schedulesResult;
@@ -154,6 +193,14 @@ app.get("/scheduler", async (c) => {
 		status: s.status,
 	}));
 
+	// Build last run time per source from recent runs
+	const lastRunBySource = new Map<string, number>();
+	for (const run of (recentRunsResult.results ?? [])) {
+		if (!lastRunBySource.has(run.source_id)) {
+			lastRunBySource.set(run.source_id, run.created_at);
+		}
+	}
+
 	const schedulesJson = JSON.stringify(schedules)
 		.replace(/</g, "\\u003c")
 		.replace(/>/g, "\\u003e")
@@ -162,8 +209,12 @@ app.get("/scheduler", async (c) => {
 		.replace(/</g, "\\u003c")
 		.replace(/>/g, "\\u003e")
 		.replace(/\//g, "\\/");
+	const lastRunJson = JSON.stringify(Object.fromEntries(lastRunBySource))
+		.replace(/</g, "\\u003c")
+		.replace(/>/g, "\\u003e")
+		.replace(/\//g, "\\/");
 
-	const html = renderSchedulerHtml({ schedulesJson, sourcesJson });
+	const html = renderSchedulerHtml({ schedulesJson, sourcesJson, lastRunJson });
 	return c.html(html);
 });
 
@@ -180,6 +231,7 @@ function escapeHtml(text: string): string {
 interface SchedulerHtmlParams {
 	schedulesJson: string;
 	sourcesJson: string;
+	lastRunJson: string;
 }
 
 function renderSchedulerHtml(p: SchedulerHtmlParams): string {
@@ -222,7 +274,7 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 			font-family: 'IBM Plex Mono', ui-monospace, monospace;
 			font-size: 0.9em;
 		}
-		.container { max-width: 1100px; margin: 0 auto; padding: 28px 24px 48px; }
+		.container { max-width: 1200px; margin: 0 auto; padding: 28px 24px 48px; }
 		header {
 			background: linear-gradient(160deg, var(--workbench) 0%, var(--sawdust) 100%);
 			border: 1px solid var(--grain);
@@ -393,6 +445,8 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 		}
 		.badge-enabled { background: rgba(45,106,79,0.12); color: var(--success); }
 		.badge-disabled { background: rgba(157,44,44,0.10); color: var(--danger); }
+		.badge-active { background: rgba(45,106,79,0.12); color: var(--success); }
+		.badge-paused { background: rgba(179,89,0,0.12); color: var(--warning); }
 		.empty-state {
 			padding: 28px;
 			text-align: center;
@@ -427,6 +481,39 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 			padding: 2px 6px;
 			border-radius: 6px;
 			font-family: 'IBM Plex Mono', ui-monospace, monospace;
+		}
+		.cron-preview {
+			font-size: 0.85rem;
+			color: var(--graphite);
+			margin-top: 8px;
+			padding: 10px 14px;
+			background: var(--white);
+			border-radius: 8px;
+			border: 1px solid var(--grain);
+		}
+		.cron-preview strong {
+			color: var(--carbon);
+		}
+		.source-health {
+			font-size: 0.8rem;
+			margin-top: 2px;
+		}
+		.bulk-bar {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			margin-bottom: 12px;
+			padding: 10px 14px;
+			background: var(--white);
+			border-radius: 8px;
+			border: 1px solid var(--grain);
+		}
+		.bulk-bar.hidden { display: none; }
+		.checkbox {
+			width: 18px;
+			height: 18px;
+			accent-color: var(--forge);
+			cursor: pointer;
 		}
 	</style>
 </head>
@@ -464,11 +551,12 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 					<label for="enabledToggle" style="margin:0">Enabled</label>
 				</div>
 			</div>
+			<div id="cronPreview" class="cron-preview" style="display:none;"></div>
 			<div class="cron-hint">
 				Examples:
 				<code>*/5 * * * *</code> every 5 min,
 				<code>0 * * * *</code> hourly,
-				<code>0 */6 * * *</code> every 6 hours,
+<code>0 */6 * * *</code> every 6 hours,
 				<code>0 9 * * *</code> daily at 9am UTC
 			</div>
 			<div style="margin-top: 14px;">
@@ -477,7 +565,15 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 		</div>
 
 		<div class="card">
-			<h2>Active Schedules</h2>
+			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+				<h2>Active Schedules</h2>
+				<div id="bulkBar" class="bulk-bar hidden">
+					<span id="bulkCount">0 selected</span>
+					<button class="btn btn-sm btn-secondary" onclick="bulkEnable(true)">Enable</button>
+					<button class="btn btn-sm btn-secondary" onclick="bulkEnable(false)">Disable</button>
+					<button class="btn btn-sm btn-danger" onclick="bulkDelete()">Delete</button>
+				</div>
+			</div>
 			<div id="schedulesTableWrap">
 				<div class="empty-state">No schedules configured yet.</div>
 			</div>
@@ -490,6 +586,7 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 	(function() {
 		const schedules = ${p.schedulesJson};
 		const sources = ${p.sourcesJson};
+		const lastRunBySource = ${p.lastRunJson};
 
 		const sourceSelect = document.getElementById('sourceSelect');
 		const cronInput = document.getElementById('cronInput');
@@ -498,6 +595,9 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 		const addBtn = document.getElementById('addBtn');
 		const tableWrap = document.getElementById('schedulesTableWrap');
 		const toast = document.getElementById('toast');
+		const cronPreview = document.getElementById('cronPreview');
+		const bulkBar = document.getElementById('bulkBar');
+		const bulkCount = document.getElementById('bulkCount');
 
 		// Populate source dropdown
 		sources.forEach(s => {
@@ -513,31 +613,180 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 			setTimeout(() => { toast.className = 'toast'; }, 3000);
 		}
 
+		function formatDuration(seconds) {
+			if (!seconds || seconds < 60) return 'just now';
+			const mins = Math.floor(seconds / 60);
+			if (mins < 60) return mins + 'm ago';
+			const hrs = Math.floor(mins / 60);
+			if (hrs < 24) return hrs + 'h ago';
+			const days = Math.floor(hrs / 24);
+			return days + 'd ago';
+		}
+
+		function getNextRuns(cron, count) {
+			const parts = cron.trim().split(/\s+/);
+			if (parts.length !== 5) return [];
+			const [min, hr, day, month, weekday] = parts;
+			const now = new Date();
+			const runs = [];
+			let d = new Date(now);
+			d.setSeconds(0, 0);
+			// Simple preview: increment by minute up to 1 year
+			while (runs.length < count && d.getFullYear() - now.getFullYear() < 2) {
+				d = new Date(d.getTime() + 60000);
+				if (d <= now) continue;
+				// Very basic matching for preview purposes
+				const m = d.getUTCMinutes();
+				const h = d.getUTCHours();
+				const dom = d.getUTCDate();
+				const mo = d.getUTCMonth() + 1;
+				const wd = d.getUTCDay();
+				if (!matchField(min, m, 0, 59)) continue;
+				if (!matchField(hr, h, 0, 23)) continue;
+				if (!matchField(day, dom, 1, 31)) continue;
+				if (!matchField(month, mo, 1, 12)) continue;
+				if (!matchField(weekday, wd, 0, 6)) continue;
+				runs.push(new Date(d));
+			}
+			return runs;
+		}
+
+		function matchField(expr, value, min, max) {
+			if (expr === '*') return true;
+			if (expr === '*/1') return true;
+			if (expr.startsWith('*/')) {
+				const step = parseInt(expr.slice(2), 10);
+				return value % step === 0;
+			}
+			if (expr.includes(',')) {
+				return expr.split(',').some(p => parseInt(p, 10) === value);
+			}
+			if (expr.includes('-')) {
+				const [s, e] = expr.split('-').map(Number);
+				return value >= s && value <= e;
+			}
+			return parseInt(expr, 10) === value;
+		}
+
+		function updateCronPreview() {
+			const cron = cronInput.value.trim();
+			const runs = getNextRuns(cron, 5);
+			if (runs.length > 0) {
+				cronPreview.style.display = 'block';
+				cronPreview.innerHTML = '<strong>Next runs:</strong> <ul style="margin:6px 0 0 18px;">' +
+					runs.map(r => '<li>' + r.toISOString().replace('T', ' ').slice(0, 16) + ' UTC</li>').join('') +
+					'</ul>';
+			} else {
+				cronPreview.style.display = 'none';
+			}
+		}
+
+		cronInput.addEventListener('input', updateCronPreview);
+		updateCronPreview();
+
+		function getSelectedIds() {
+			return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.dataset.id);
+		}
+
+		function updateBulkBar() {
+			const ids = getSelectedIds();
+			if (ids.length > 0) {
+				bulkBar.classList.remove('hidden');
+				bulkCount.textContent = ids.length + ' selected';
+			} else {
+				bulkBar.classList.add('hidden');
+			}
+		}
+
+		window.bulkEnable = async function(enabled) {
+			const ids = getSelectedIds();
+			if (!ids.length) return;
+			try {
+				const res = await fetch('/internal/schedules/bulk-toggle', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ scheduleIds: ids, enabled })
+				});
+				if (!res.ok) throw new Error('Bulk update failed');
+				ids.forEach(id => {
+					const sch = schedules.find(s => s.scheduleId === id);
+					if (sch) sch.enabled = enabled;
+				});
+				renderSchedules();
+				showToast('Updated ' + ids.length + ' schedules', 'success');
+			} catch (e) {
+				showToast('Bulk update failed', 'error');
+			}
+		};
+
+		window.bulkDelete = async function() {
+			const ids = getSelectedIds();
+			if (!ids.length) return;
+			if (!confirm('Delete ' + ids.length + ' selected schedules?')) return;
+			try {
+				const res = await fetch('/internal/schedules/bulk-delete', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ scheduleIds: ids })
+				});
+				if (!res.ok) throw new Error('Bulk delete failed');
+				ids.forEach(id => {
+					const idx = schedules.findIndex(s => s.scheduleId === id);
+					if (idx > -1) schedules.splice(idx, 1);
+				});
+				renderSchedules();
+				showToast('Deleted ' + ids.length + ' schedules', 'success');
+			} catch (e) {
+				showToast('Bulk delete failed', 'error');
+			}
+		};
+
 		function renderSchedules() {
 			if (!schedules.length) {
 				tableWrap.innerHTML = '<div class="empty-state">No schedules configured yet.</div>';
+				bulkBar.classList.add('hidden');
 				return;
 			}
 			const rows = schedules.map((sch, idx) => {
 				const src = sources.find(s => s.sourceId === sch.sourceId);
 				const srcName = src ? src.name : sch.sourceId;
-				return '\u003ctr data-index="' + idx + '"\u003e' +
-					'<td\u003e<div style="font-weight:600">' + escapeHtml(srcName) + '</div><div class="mono" style="color:#6B6B6B;font-size:0.85rem">' + escapeHtml(sch.sourceId) + '</div></td\u003e' +
-					'<td class="mono">' + escapeHtml(sch.cronExpression) + '</td\u003e' +
-					'<td\u003e' + (sch.label ? escapeHtml(sch.label) : '<span style="color:#9A9A9A">—</span>') + '</td\u003e' +
-					'<td\u003e<span class="badge ' + (sch.enabled ? 'badge-enabled' : 'badge-disabled') + '"\u003e' + (sch.enabled ? 'Enabled' : 'Disabled') + '</span></td\u003e' +
-					'<td\u003e' +
+				const srcStatus = src ? src.status : 'unknown';
+				const statusBadge = srcStatus === 'active' ? 'badge-active' : srcStatus === 'paused' ? 'badge-paused' : 'badge-disabled';
+				const lastRun = lastRunBySource[sch.sourceId];
+				const lastRunText = lastRun ? formatDuration(Math.floor(Date.now() / 1000) - lastRun) : '<span style="color:#9A9A9A">Never</span>';
+				const nextRuns = getNextRuns(sch.cronExpression, 1);
+				const nextRunText = nextRuns.length > 0
+					? formatDuration(Math.floor((nextRuns[0].getTime() - Date.now()) / 1000)).replace('ago', '') + '
+					: '<span style="color:#9A9A9A">—</span>';
+				return '<tr data-index="' + idx + '">' +
+					'<td><input type="checkbox" class="checkbox row-checkbox" data-id="' + sch.scheduleId + '" data-index="' + idx + '"></td>' +
+					'<td><div style="font-weight:600">' + escapeHtml(srcName) + '</div><div class="mono" style="color:#6B6B6B;font-size:0.85rem">' + escapeHtml(sch.sourceId) + '</div><div class="source-health"><span class="badge ' + statusBadge + '">' + srcStatus + '</span></div></td>' +
+					'<td class="mono">' + escapeHtml(sch.cronExpression) + '</td>' +
+					'<td>' + (sch.label ? escapeHtml(sch.label) : '<span style="color:#9A9A9A">—</span>') + '</td>' +
+					'<td>' + lastRunText + '</td>' +
+					'<td>' + nextRunText + '</td>' +
+					'<td><span class="badge ' + (sch.enabled ? 'badge-enabled' : 'badge-disabled') + '">' + (sch.enabled ? 'Enabled' : 'Disabled') + '</span></td>' +
+					'<td>' +
 						'<div class="actions">' +
-							'<button class="btn btn-sm btn-secondary toggle-btn" data-id="' + sch.scheduleId + '" data-enabled="' + (sch.enabled ? '1' : '0') + '"\u003e' + (sch.enabled ? 'Disable' : 'Enable') + '</button\u003e' +
-							'<button class="btn btn-sm btn-secondary trigger-btn" data-id="' + sch.scheduleId + '"\u003eTrigger Now</button\u003e' +
-							'<button class="btn btn-sm btn-danger delete-btn" data-id="' + sch.scheduleId + '"\u003eDelete</button\u003e' +
+							'<button class="btn btn-sm btn-secondary toggle-btn" data-id="' + sch.scheduleId + '" data-enabled="' + (sch.enabled ? '1' : '0') + '">' + (sch.enabled ? 'Disable' : 'Enable') + '</button>' +
+							'<button class="btn btn-sm btn-secondary trigger-btn" data-id="' + sch.scheduleId + '">Trigger Now</button>' +
+							'<button class="btn btn-sm btn-danger delete-btn" data-id="' + sch.scheduleId + '">Delete</button>' +
 						'</div>' +
-					'</td\u003e' +
-				'</tr\u003e';
+					'</td>' +
+				'</tr>';
 			}).join('');
-			tableWrap.innerHTML = '<table\u003e<thead><tr><th>Source</th><th>Cron</th><th>Label</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
+			tableWrap.innerHTML = '<table><thead><tr><th><input type="checkbox" class="checkbox" id="selectAll"></th><th>Source</th><th>Cron</th><th>Label</th><th>Last Run</th><th>Next Run</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
 
-			// Bind actions
+			// Select all
+			document.getElementById('selectAll').addEventListener('change', function() {
+				document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = this.checked);
+				updateBulkBar();
+			});
+
+			tableWrap.querySelectorAll('.row-checkbox').forEach(cb => {
+				cb.addEventListener('change', updateBulkBar);
+			});
+
 			tableWrap.querySelectorAll('.toggle-btn').forEach(btn => {
 				btn.addEventListener('click', async function() {
 					const id = this.dataset.id;
@@ -627,6 +876,7 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 				cronInput.value = '0 * * * *';
 				labelInput.value = '';
 				enabledToggle.checked = true;
+				updateCronPreview();
 				showToast('Schedule added', 'success');
 			} catch (e) {
 				showToast(e.message || 'Failed to add schedule', 'error');
