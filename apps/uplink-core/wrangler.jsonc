@@ -60,6 +60,14 @@
 			{
 				"name": "NOTIFICATION_DISPATCHER",
 				"class_name": "NotificationDispatcher"
+			},
+			{
+				"name": "DASHBOARD_STREAM",
+				"class_name": "DashboardStreamDO"
+			},
+			{
+				"name": "ERROR_AGENT",
+				"class_name": "ErrorAgentDO"
 			}
 		]
 	},
@@ -75,6 +83,10 @@
 		{
 			"tag": "v3",
 			"new_sqlite_classes": ["NotificationDispatcher"]
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["DashboardStreamDO", "ErrorAgentDO"]
 		}
 	],
 	"workflows": [

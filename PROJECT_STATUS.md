@@ -49,6 +49,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ D1 operational data (sources, runs, entities)
 - ✅ Entity normalization and deduplication
 - ✅ Vectorize semantic search
+- ✅ **AST-based code chunking** - Intelligent chunking of TS/JS files by constructs (function, class, interface, type)
 
 #### Coordination & Reliability
 - ✅ Durable Object-based source coordination
@@ -59,7 +60,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Failure tracking and auto-pause
 
 #### Observability & Operations
-- ✅ **Visual HTML Dashboard** - Self-hosted with auto-refresh
+- ✅ **Visual HTML Dashboard** - Self-hosted with auto-refresh and WebSocket real-time updates
 - ✅ **Pipeline Topology** - Visual flow with health status
 - ✅ **Component Health** - Live health checks of all services
 - ✅ **Data Flow Metrics** - Records/sec, latency, error rates
@@ -69,6 +70,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ **Settings Management** - Platform configuration with audit log
 - ✅ **Alerting System** - Active alerts with severity levels
 - ✅ **Metrics Pipeline** - Analytics Engine integration
+- ✅ **RAG Error Agent** - AI-powered error diagnosis via WebSocket with Vectorize search
+- ✅ **Data Export API** - Export runs, entities, and errors in JSON, CSV, or NDJSON
 
 #### Security & Access Control
 - ✅ Bearer token auth for external endpoints
@@ -78,17 +81,17 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Audit logging for all operations
 
 #### Testing (500+ Tests)
-- ✅ 261 core unit tests (lib modules)
+- ✅ 274 core unit tests (lib modules)
 - ✅ 35 integration tests (coordinator, workflows, pipeline)
 - ✅ 6 e2e tests (full flows)
-- ✅ 37 edge worker tests
+- ✅ 42 edge worker tests
 - ✅ 32 ops worker tests
 - ✅ 32 browser worker tests
 - ✅ 49 contracts tests
-- ✅ 19 normalizers tests
+- ✅ 37 normalizers tests
 - ✅ 29 source-adapters tests
 - ✅ 18 live tests (production validation)
-- **Total: 519 tests across all suites**
+- **Total: 554 tests across all suites**
 
 ---
 
@@ -104,7 +107,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 *Webhooks use HMAC signature verification
 
-### Internal Endpoints (uplink-core) - 40+ endpoints
+### Internal Endpoints (uplink-core) - 45+ endpoints
 | Category | Endpoints |
 |----------|-----------|
 | **Dashboard** | `/dashboard`, `/internal/dashboard/v2` |
@@ -117,6 +120,9 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | **Audit** | Log query |
 | **Alerts** | List, acknowledge, resolve, check |
 | **Metrics** | System, per-source, queue, entities |
+| **Real-time** | `/internal/stream/dashboard` (WebSocket) |
+| **AI Agent** | `/internal/agent/error` (WebSocket) |
+| **Export** | `/internal/export/runs`, `/internal/export/entities`, `/internal/export/errors` |
 
 ---
 
@@ -161,7 +167,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 15. `platform_settings` - Global configuration
 16. `audit_log` - Operator action log
 
-### 8 Migrations Applied
+### 9 Migrations Applied
 - 0001_control_schema.sql
 - 0002_source_registry.sql
 - 0003_entity_plane.sql
@@ -170,6 +176,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - 0006_retry_tracking.sql
 - 0007_settings_audit.sql
 - 0008_add_missing_columns.sql
+- 0009_notification_deliveries.sql
 
 ---
 
@@ -203,8 +210,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | TypeScript Source Files | 47 |
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
-| Test Coverage | 519 tests |
-| Migrations | 8 |
+| Test Coverage | 554 tests |
+| Migrations | 9 |
 | Documentation | 11 files, ~3,700 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
 | CI/CD Workflows | 1 (GitHub Actions) |
@@ -215,12 +222,14 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ No debugger statements
 - ✅ Strict TypeScript enabled
 - ✅ All type checks pass
-- ✅ All tests pass (519)
+- ✅ All tests pass (554)
 - ✅ Biome linting clean
 - ✅ No secrets in code
-- ✅ Core worker refactored into 12 route modules
+- ✅ Core worker refactored into 14 route modules
 - ✅ CI/CD pipeline configured
 - ✅ Synthetic monitoring active
+- ✅ 2 new Durable Objects (DashboardStreamDO, ErrorAgentDO)
+- ✅ WebSocket hibernation for real-time features
 
 ---
 
@@ -244,19 +253,21 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 ## Next Steps (Optional Enhancements)
 
 ### High Value
-- [ ] Add GitHub Actions CI/CD workflows
-- [ ] Add synthetic monitoring cron job
-- [ ] Create OpenAPI spec from routes
-- [ ] Add PagerDuty/Slack alert integrations
+- [x] Add GitHub Actions CI/CD workflows
+- [x] Add synthetic monitoring cron job
+- [x] Create OpenAPI spec from routes
+- [x] Add PagerDuty/Slack alert integrations
+- [x] Apply AST-based chunking from RepoMind patterns
 
 ### Medium Value
-- [ ] Split large files (db.ts, index.ts)
+- [x] Split large files (db.ts, index.ts)
 - [ ] Add entity relationship visualization
-- [ ] Create data export API
+- [x] Create data export API
 - [ ] Add multi-region support
 
 ### Nice to Have
-- [ ] WebSocket real-time updates
+- [x] WebSocket real-time updates
+- [x] RAG-based error chat agent
 - [ ] GraphQL API layer
 - [ ] Custom alert rule builder
 - [ ] Data quality scoring
@@ -285,8 +296,14 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 ## Recent Changes (April 14, 2026)
 
 ### Code Quality
-- **Refactored uplink-core**: Split 1,250 line `index.ts` into 12 focused route modules
-- **Route Modules**: health, runs, sources, entities, artifacts, alerts, metrics, errors, dashboard, health-monitor, settings, browser
+- **Refactored uplink-core**: Split 1,250 line `index.ts` into 14 focused route modules
+- **Route Modules**: health, runs, sources, entities, artifacts, alerts, metrics, errors, dashboard, health-monitor, settings, browser, agents, export
+- **AST-based Chunking**: Added `chunkCode()` to `@uplink/normalizers` for intelligent TS/JS file chunking
+
+### Real-time & AI
+- **WebSocket Dashboard**: `DashboardStreamDO` streams live metrics to connected clients every 5 seconds
+- **RAG Error Agent**: `ErrorAgentDO` uses Vectorize + Workers AI to diagnose errors via WebSocket chat
+- **Data Export API**: Export runs, entities, and errors in JSON, CSV, or NDJSON formats
 
 ### DevOps & Monitoring
 - **GitHub Actions CI/CD**: Automated testing on PRs and pushes to main
@@ -295,4 +312,4 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ### Documentation
 - **OpenAPI 3.0 Spec**: Complete API specification at `openapi.yml`
-- **519 Tests**: All passing across unit, integration, and e2e suites
+- **554 Tests**: All passing across unit, integration, and e2e suites

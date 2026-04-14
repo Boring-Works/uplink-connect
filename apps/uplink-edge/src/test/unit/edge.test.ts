@@ -11,6 +11,9 @@ describe("uplink-edge unit", () => {
 		UPLINK_CORE: {
 			fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
 		} as unknown as Fetcher,
+		RAW_BUCKET: {
+			put: async () => undefined,
+		} as unknown as R2Bucket,
 	});
 
 	describe("health", () => {
@@ -208,6 +211,7 @@ describe("uplink-edge unit", () => {
 
 		it("rejects when RAW_BUCKET not configured", async () => {
 			const env = createEnv();
+			delete (env as Record<string, unknown>).RAW_BUCKET;
 			const form = new FormData();
 			form.append("file", new File(["test"], "test.txt", { type: "text/plain" }));
 			const res = await app.fetch(

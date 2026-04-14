@@ -283,6 +283,10 @@ app.get("/dashboard", async (c) => {
 			}).join('')
 			: '<div style="color: #64748b; padding: 20px;">No active alerts</div>';
 
+		const wsProtocol = c.req.url.startsWith("https:") ? "wss:" : "ws:";
+		const wsHost = new URL(c.req.url).host;
+		const wsUrl = `${wsProtocol}//${wsHost}/internal/stream/dashboard`;
+
 		const html = renderDashboardHtml({
 			overallStatus,
 			totalSources,
@@ -300,6 +304,7 @@ app.get("/dashboard", async (c) => {
 			pipelineStagesHtml,
 			componentsHtml,
 			alertsHtml,
+			wsUrl,
 		});
 
 		return c.html(html);
@@ -340,6 +345,7 @@ interface DashboardHtmlParams {
 	pipelineStagesHtml: string;
 	componentsHtml: string;
 	alertsHtml: string;
+	wsUrl: string;
 }
 
 function renderDashboardHtml(p: DashboardHtmlParams): string {
@@ -586,7 +592,84 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		<form action="/dashboard" method="GET">
 			<button type="submit" class="refresh-btn">Refresh Dashboard</button>
 		</form>
+		<div id="ws-status" style="margin-top: 10px; font-size: 0.75rem; color: #64748b;">Connecting to real-time updates...</div>
 	</div>
+	<script>
+	(function() {
+		const wsUrl = '${p.wsUrl}';
+		const statusEl = document.getElementById('ws-status');
+		let ws;
+		let reconnectTimer;
+
+		function connect() {
+			ws = new WebSocket(wsUrl);
+			ws.onopen = function() {
+				statusEl.textContent = 'Live updates connected';
+				statusEl.style.color = '#34d399';
+				ws.send(JSON.stringify({ type: 'subscribe', topics: ['metrics', 'all'] }));
+			};
+			ws.onmessage = function(event) {
+				try {
+					const msg = JSON.parse(event.data);
+					if (msg.type === 'metrics' && msg.data) {
+						updateMetrics(msg.data);
+					}
+				} catch (e) {
+					console.error('WS parse error:', e);
+				}
+			};
+			ws.onclose = function() {
+				statusEl.textContent = 'Reconnecting...';
+				statusEl.style.color = '#fbbf24';
+				reconnectTimer = setTimeout(connect, 3000);
+			};
+			ws.onerror = function() {
+				statusEl.textContent = 'Connection error';
+				statusEl.style.color = '#f87171';
+			};
+		}
+
+		function updateMetrics(data) {
+			if (data.sources && data.sources.total != null) {
+				const cards = document.querySelectorAll('.card');
+				if (cards[0]) {
+					const metric = cards[0].querySelector('.metric');
+					if (metric) metric.textContent = data.sources.total;
+				}
+			}
+			if (data.runs24h) {
+				const total = Object.values(data.runs24h).reduce((a, b) => a + b, 0);
+				const cards = document.querySelectorAll('.card');
+				if (cards[1]) {
+					const metric = cards[1].querySelector('.metric');
+					if (metric) metric.textContent = total;
+				}
+			}
+			if (data.queue) {
+				const cards = document.querySelectorAll('.card');
+				if (cards[2]) {
+					const metric = cards[2].querySelector('.metric');
+					const sub = cards[2].querySelector('.metric-sub');
+					if (metric) metric.textContent = (data.queue.pending || 0) + 'm';
+					if (sub) sub.textContent = (data.queue.pending || 0) + ' pending · ' + (data.queue.processing || 0) + ' processing';
+				}
+			}
+			if (data.alerts) {
+				const cards = document.querySelectorAll('.card');
+				if (cards[3]) {
+					const metric = cards[3].querySelector('.metric');
+					if (metric) metric.textContent = data.alerts.active || 0;
+				}
+			}
+		}
+
+		connect();
+		window.addEventListener('beforeunload', function() {
+			if (reconnectTimer) clearTimeout(reconnectTimer);
+			if (ws) ws.close();
+		});
+	})();
+	</script>
 </body>
 </html>`;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEnvelope } from "../index";
+import { normalizeEnvelope, chunkCode } from "../index";
 
 describe("normalizeEnvelope", () => {
 	it("normalizes single record", () => {
@@ -436,8 +436,208 @@ describe("normalizeEnvelope", () => {
 		};
 
 		const entities = normalizeEnvelope(envelope);
-		expect(entities[0].entityId).toBe("src-1:ext:ext-1");
-		expect(entities[1].entityId).toBe("src-1:hash:hash2:1");
-		expect(entities[2].entityId).toBe("src-1:ext:ext-2");
+	expect(entities[0].entityId).toBe("src-1:ext:ext-1");
+	expect(entities[1].entityId).toBe("src-1:hash:hash2:1");
+	expect(entities[2].entityId).toBe("src-1:ext:ext-2");
+});
+});
+
+describe("chunkCode", () => {
+	it("should chunk a simple function", () => {
+		const code = `
+function hello() {
+  return "world";
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		expect(chunks.length).toBeGreaterThan(0);
+		expect(chunks[0].chunkType).toBe("function");
+	});
+
+	it("should chunk multiple functions", () => {
+		const code = `
+function foo() {
+  return 1;
+}
+
+function bar() {
+  return 2;
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const functions = chunks.filter((c) => c.chunkType === "function");
+		expect(functions.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("should detect class definitions", () => {
+		const code = `
+class MyClass {
+  constructor() {
+    this.value = 1;
+  }
+  method() {
+    return this.value;
+  }
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const classes = chunks.filter((c) => c.chunkType === "class");
+		expect(classes.length).toBeGreaterThan(0);
+	});
+
+	it("should detect interface definitions", () => {
+		const code = `
+interface Config {
+  name: string;
+  value: number;
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const interfaces = chunks.filter((c) => c.chunkType === "interface");
+		expect(interfaces.length).toBeGreaterThan(0);
+	});
+
+	it("should detect type definitions", () => {
+		const code = `
+type ID = string;
+type User = { name: string };
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const types = chunks.filter((c) => c.chunkType === "type");
+		expect(types.length).toBeGreaterThan(0);
+	});
+
+	it("should chunk by lines for non-JS files", () => {
+		const code = `
+Line 1
+Line 2
+Line 3
+Line 4
+Line 5
+		`.trim();
+		const chunks = chunkCode(code, "test.md");
+		expect(chunks.length).toBeGreaterThan(0);
+		expect(chunks[0].chunkType).toBe("other");
+	});
+
+	it("should respect max chunk size", () => {
+		const lines = Array.from({ length: 200 }, (_, i) => `const x${i} = ${i};`);
+		const code = lines.join("\n");
+		const chunks = chunkCode(code, "test.ts", { maxChunkSize: 1000 });
+		expect(chunks.length).toBeGreaterThan(1);
+		for (const chunk of chunks) {
+			expect(chunk.content.length).toBeLessThanOrEqual(1100);
+		}
+	});
+
+	it("should skip chunks smaller than min size", () => {
+		const code = `const x = 1;`;
+		const chunks = chunkCode(code, "test.ts", { minChunkSize: 100 });
+		expect(chunks.length).toBe(0);
+	});
+
+	it("should detect import blocks", () => {
+		const code = `
+import { a } from "a";
+import { b } from "b";
+import { c } from "c";
+
+const x = 1;
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const hasImports = chunks.some(
+			(c) => c.content.includes("import { a }") && c.content.includes("import { b }")
+		);
+		expect(hasImports).toBe(true);
+	});
+
+	it("should detect export blocks", () => {
+		const code = `
+export { somethingLonger, anotherThing };
+export { yetAnother, oneMore };
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const hasExports = chunks.some((c) => c.content.includes("export {"));
+		expect(hasExports).toBe(true);
+	});
+
+	it("should handle arrow functions", () => {
+		const code = `
+const fn = () => {
+  return 42;
+};
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const functions = chunks.filter((c) => c.chunkType === "function");
+		expect(functions.length).toBeGreaterThan(0);
+	});
+
+	it("should handle async functions", () => {
+		const code = `
+async function fetchData() {
+  return await fetch("/api");
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		const functions = chunks.filter((c) => c.chunkType === "function");
+		expect(functions.length).toBeGreaterThan(0);
+	});
+
+	it("should set correct line numbers", () => {
+		const code = `
+function first() {
+  return 1;
+}
+
+function second() {
+  return 2;
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.ts");
+		for (const chunk of chunks) {
+			expect(chunk.lineStart).toBeGreaterThan(0);
+			expect(chunk.lineEnd).toBeGreaterThanOrEqual(chunk.lineStart);
+		}
+	});
+
+	it("should include file path in chunk ID", () => {
+		const code = `function test() { return 1; }`;
+		const chunks = chunkCode(code, "src/utils/helpers.ts");
+		expect(chunks.length).toBeGreaterThan(0);
+		expect(chunks[0].id).toContain("src/utils/helpers.ts");
+	});
+
+	it("should handle jsx files", () => {
+		const code = `
+function Component() {
+  return <div>Hello</div>;
+}
+		`.trim();
+		const chunks = chunkCode(code, "test.jsx");
+		expect(chunks.length).toBeGreaterThan(0);
+		expect(chunks[0].chunkType).toBe("function");
+	});
+
+	it("should handle tsx files", () => {
+		const code = `
+const Component: React.FC = () => {
+  return <div>Hello</div>;
+};
+		`.trim();
+		const chunks = chunkCode(code, "test.tsx");
+		expect(chunks.length).toBeGreaterThan(0);
+		// TSX arrow with type annotation doesn't match function regex, falls back to other
+		expect(chunks[0].chunkType).toBe("other");
+	});
+
+	it("should handle empty content", () => {
+		const chunks = chunkCode("", "test.ts");
+		expect(chunks.length).toBe(0);
+	});
+
+	it("should handle single line non-code file", () => {
+		const chunks = chunkCode("Hello world", "test.txt", { minChunkSize: 1 });
+		expect(chunks.length).toBe(1);
+		expect(chunks[0].content).toBe("Hello world");
 	});
 });

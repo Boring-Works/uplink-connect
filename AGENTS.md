@@ -109,15 +109,17 @@ pnpm dev:ops       # Terminal 4
 - `apps/uplink-core/src/lib/alerting.ts` - Alert system
 - `apps/uplink-core/src/lib/health-monitor.ts` - Health monitoring
 - `apps/uplink-core/src/durable/source-coordinator.ts` - DO implementation
+- `apps/uplink-core/src/durable/dashboard-stream.ts` - Real-time dashboard WebSocket DO
+- `apps/uplink-core/src/durable/error-agent.ts` - RAG-based error analysis DO
 - `apps/uplink-core/src/workflows/collection-workflow.ts` - Collection workflow
 
 ### Shared Packages
 - `packages/contracts/src/index.ts` - Zod schemas, types
 - `packages/source-adapters/src/index.ts` - API, webhook, browser adapters
-- `packages/normalizers/src/index.ts` - Entity normalization
+- `packages/normalizers/src/index.ts` - Entity normalization and code chunking
 
 ### Database
-- `apps/uplink-core/migrations/*.sql` - 8 migration files
+- `apps/uplink-core/migrations/*.sql` - 9 migration files
 
 ---
 
@@ -143,7 +145,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Testing
 - Vitest with @cloudflare/vitest-pool-workers
-- 500+ tests across unit, integration, e2e, live
+- 554+ tests across unit, integration, e2e, live
 - Tests run in actual Workers runtime
 
 ---
@@ -192,11 +194,12 @@ BROWSER_API_KEY=browser-dev-key
 ## Common Tasks
 
 ### Add a New Endpoint
-1. Add route in `apps/uplink-core/src/index.ts`
-2. Add Zod schema in `packages/contracts/src/index.ts` if needed
-3. Add DB function in `apps/uplink-core/src/lib/db.ts` if needed
-4. Add tests
-5. Update API.md documentation
+1. Add route module in `apps/uplink-core/src/routes/`
+2. Wire up in `apps/uplink-core/src/index.ts`
+3. Add Zod schema in `packages/contracts/src/index.ts` if needed
+4. Add DB function in `apps/uplink-core/src/lib/db.ts` if needed
+5. Add tests
+6. Update API.md documentation
 
 ### Add a Database Migration
 1. Create `apps/uplink-core/migrations/000X_description.sql`
@@ -232,6 +235,10 @@ pnpm vitest run --config vitest.live.config.ts
 **Dashboard shows zeros:**
 - Normal if no data ingested
 - Check `/internal/dashboard/v2` with internal key
+
+**WebSocket connections failing:**
+- Ensure `DASHBOARD_STREAM` and `ERROR_AGENT` DO bindings are in wrangler.jsonc
+- Check that v4 migration has been applied
 
 ---
 
@@ -280,4 +287,4 @@ pnpm vitest run --config vitest.live.config.ts
 
 ## Last Updated
 
-April 13, 2026 - v0.1.0 production release
+April 14, 2026 - v0.1.1 with WebSocket real-time dashboard, RAG error agent, and data export API

@@ -2,6 +2,8 @@ import type { SourceConfig, SourcePolicy } from "@uplink/contracts";
 import type { SourceCoordinator } from "./durable/source-coordinator";
 import type { BrowserManagerDO } from "./durable/browser-manager";
 import type { NotificationDispatcher } from "./durable/notification-dispatcher";
+import type { DashboardStreamDO } from "./durable/dashboard-stream";
+import type { ErrorAgentDO } from "./durable/error-agent";
 
 // Pipeline is in beta - using generic interface until types are available
 interface Pipeline {
@@ -20,6 +22,8 @@ export type Env = {
 	SOURCE_COORDINATOR: DurableObjectNamespace<SourceCoordinator>;
 	BROWSER_MANAGER: DurableObjectNamespace<BrowserManagerDO>;
 	NOTIFICATION_DISPATCHER: DurableObjectNamespace<NotificationDispatcher>;
+	DASHBOARD_STREAM: DurableObjectNamespace<DashboardStreamDO>;
+	ERROR_AGENT: DurableObjectNamespace<ErrorAgentDO>;
 	COLLECTION_WORKFLOW: Workflow;
 	RETENTION_WORKFLOW: Workflow;
 	CORE_INTERNAL_KEY?: string;

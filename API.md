@@ -1134,6 +1134,70 @@ Get audit trail of operator actions.
 
 ---
 
+### GET /internal/stream/dashboard
+
+WebSocket endpoint for real-time dashboard metrics. Upgrades to WebSocket connection.
+
+**Messages:**
+- Send `{"type": "subscribe", "topics": ["metrics", "all"]}` to receive updates
+- Receives `{"type": "metrics", "data": {...}}` every 5 seconds
+
+---
+
+### GET /internal/agent/error
+
+WebSocket endpoint for RAG-based error analysis. Upgrades to WebSocket connection.
+
+**Messages:**
+- Send `{"type": "chat", "content": "error description"}` to get AI diagnosis
+- Send `{"type": "history"}` to get conversation history
+- Send `{"type": "clear"}` to reset conversation
+
+---
+
+### GET /internal/export/runs
+
+Export ingest runs in JSON, CSV, or NDJSON format.
+
+**Query Parameters:**
+- `sourceId` - Filter by source
+- `startDate` - Filter start date
+- `endDate` - Filter end date
+- `status` - Filter by status
+- `format` - `json` (default), `csv`, or `ndjson`
+- `limit` - Max records (default: 10000, max: 50000)
+
+**Response:** File download in requested format
+
+---
+
+### GET /internal/export/entities
+
+Export entities in JSON, CSV, or NDJSON format.
+
+**Query Parameters:**
+- `sourceId` - Filter by source
+- `entityType` - Filter by entity type
+- `format` - `json` (default), `csv`, or `ndjson`
+- `limit` - Max records (default: 10000, max: 50000)
+
+**Response:** File download in requested format
+
+---
+
+### GET /internal/export/errors
+
+Export errors in JSON, CSV, or NDJSON format.
+
+**Query Parameters:**
+- `sourceId` - Filter by source
+- `format` - `json` (default), `csv`, or `ndjson`
+- `limit` - Max records (default: 10000, max: 50000)
+
+**Response:** File download in requested format
+
+---
+
 ## Authentication Summary
 
 | Service | Endpoint Pattern | Auth Method | Key Location |
