@@ -29,6 +29,7 @@ export type Env = {
 	CORE_INTERNAL_KEY?: string;
 	BROWSER_API_KEY?: string;
 	SLACK_WEBHOOK_URL?: string;
+	DASHBOARD_PASSWORD?: string;
 };
 
 export type SourceConfigRecord = SourceConfig;

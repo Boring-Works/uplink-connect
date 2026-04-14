@@ -10,6 +10,7 @@ import {
 import { getSourceConfigWithPolicy } from "../lib/db";
 import { getCoordinatorStub, acquireLease } from "../lib/coordinator-client";
 import { toIsoNow } from "@uplink/contracts";
+import { ensureDashboardAuth } from "../lib/dashboard-auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -124,6 +125,12 @@ app.post("/internal/schedules/:scheduleId/trigger", async (c) => {
 
 // HTML Scheduler Settings Page
 app.get("/scheduler", async (c) => {
+	const authCheck = await ensureDashboardAuth(c.req.raw, c.env, {
+		pageTitle: "Scheduler Settings",
+		returnPath: "/scheduler",
+	});
+	if (authCheck) return authCheck;
+
 	const [schedulesResult, sourcesResult] = await Promise.all([
 		listSourceSchedules(c.env.CONTROL_DB),
 		c.env.CONTROL_DB

@@ -52,6 +52,11 @@ export interface PlatformSettings {
 		enableAiExtraction: boolean;
 	};
 
+	// Dashboard access
+	security: {
+		dashboardPasswordHash?: string;
+	};
+
 	// Metadata
 	updatedAt: string;
 	updatedBy?: string;
@@ -95,6 +100,7 @@ const DEFAULT_SETTINGS: PlatformSettings = {
 		enableBrowserRendering: true,
 		enableAiExtraction: false,
 	},
+	security: {},
 	updatedAt: new Date().toISOString(),
 };
 
@@ -297,6 +303,10 @@ function mergeWithDefaults(partial: Partial<PlatformSettings>): PlatformSettings
 		features: {
 			...DEFAULT_SETTINGS.features,
 			...partial.features,
+		},
+		security: {
+			...DEFAULT_SETTINGS.security,
+			...partial.security,
 		},
 		updatedAt: partial.updatedAt ?? DEFAULT_SETTINGS.updatedAt,
 		updatedBy: partial.updatedBy,

@@ -11,6 +11,7 @@ import {
 	getComponentHealth,
 	getPipelineTopology,
 } from "../lib/health-monitor";
+import { ensureDashboardAuth } from "../lib/dashboard-auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -160,6 +161,12 @@ app.get("/internal/dashboard/v2", async (c) => {
 });
 
 app.get("/dashboard", async (c) => {
+	const authCheck = await ensureDashboardAuth(c.req.raw, c.env, {
+		pageTitle: "Uplink Connect Dashboard",
+		returnPath: "/dashboard",
+	});
+	if (authCheck) return authCheck;
+
 	const effectiveWindow = 86400;
 
 	try {
@@ -172,13 +179,15 @@ app.get("/dashboard", async (c) => {
 			sources,
 			alerts,
 			recentRuns,
+			runRows,
+			artifactCount,
 		] = await Promise.all([
 			getSystemMetrics(c.env.CONTROL_DB),
 			getQueueMetrics(c.env.CONTROL_DB),
 			getEntityMetrics(c.env.CONTROL_DB),
 			getPipelineTopology(c.env, c.env.CONTROL_DB),
 			getComponentHealth(c.env),
-			c.env.CONTROL_DB.prepare("SELECT source_id, name, type, status FROM source_configs WHERE deleted_at IS NULL LIMIT 100").all(),
+			c.env.CONTROL_DB.prepare("SELECT source_id, name, type, status FROM source_configs WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100").all(),
 			listActiveAlerts(c.env.CONTROL_DB, { limit: 10 }),
 			c.env.CONTROL_DB.prepare(`
 				SELECT status, COUNT(*) as count
@@ -186,6 +195,13 @@ app.get("/dashboard", async (c) => {
 				WHERE created_at > unixepoch() - ?
 				GROUP BY status
 			`).bind(effectiveWindow).all(),
+			c.env.CONTROL_DB.prepare(`
+				SELECT run_id, source_id, source_name, status, record_count, created_at
+				FROM ingest_runs
+				ORDER BY created_at DESC
+				LIMIT 10
+			`).all(),
+			c.env.CONTROL_DB.prepare("SELECT COUNT(*) as count FROM raw_artifacts").first<{ count: number }>(),
 		]);
 
 		const runSummary: Record<string, number> = {};
@@ -207,81 +223,65 @@ app.get("/dashboard", async (c) => {
 		const previousTotal = previousRuns?.count ?? 0;
 		const runTrend = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
 
-		const data = {
-			timestamp: toIsoNow(),
-			windowSeconds: effectiveWindow,
-			summary: {
-				sources: {
-					total: sources.results?.length ?? 0,
-					active: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "active").length,
-					paused: (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "paused").length,
-					degraded: components.filter(c => c.status === "degraded").length,
-				},
-				runs: {
-					current: runSummary,
-					trend: {
-						percentage: Math.round(runTrend),
-						direction: runTrend >= 0 ? "up" : "down",
-					},
-				},
-				alerts: {
-					active: alerts.length,
-					critical: alerts.filter(a => a.severity === "critical").length,
-					warning: alerts.filter(a => a.severity === "warning").length,
-				},
-			},
-			pipeline: pipelineTopology,
-			components: components.map(c => ({
-				id: c.id,
-				name: c.name,
-				status: c.status,
-				latencyMs: c.latencyMs,
-			})),
-			system: systemMetrics,
-			queue: queueMetrics,
-			entities: entityMetrics,
-			activeAlerts: alerts.slice(0, 5).map(a => ({
-				alertId: a.alertId,
-				alertType: a.alertType,
-				severity: a.severity,
-				message: a.message,
-				sourceId: a.sourceId,
-				createdAt: a.createdAt,
-			})),
-		};
+		const overallStatus = pipelineTopology?.overallHealth || "unknown";
+		const totalSources = (sources.results ?? []).length;
+		const activeSources = (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "active").length;
+		const pausedSources = (sources.results ?? []).filter((s: unknown) => (s as { status: string }).status === "paused").length;
+		const totalRuns24h = currentTotal;
+		const runTrendDirection = runTrend >= 0 ? "up" : "down";
+		const runTrendPct = Math.abs(Math.round(runTrend));
+		const queueLagMin = Math.round((queueMetrics.queueLagSeconds || 0) / 60);
+		const pendingCount = queueMetrics.pendingCount || 0;
+		const processingCount = queueMetrics.processingCount || 0;
+		const activeAlertCount = alerts.length;
+		const criticalAlertCount = alerts.filter(a => a.severity === "critical").length;
+		const warningAlertCount = alerts.filter(a => a.severity === "warning").length;
 
-		const overallStatus = data.pipeline?.overallHealth || 'unknown';
-		const totalSources = data.summary.sources.total;
-		const activeSources = data.summary.sources.active;
-		const pausedSources = data.summary.sources.paused;
-		const totalRuns24h = Object.values(data.summary.runs.current).reduce((a, b) => (a as number) + (b as number), 0) as number;
-		const runTrendDirection = data.summary.runs.trend.direction;
-		const runTrendPct = Math.abs(data.summary.runs.trend.percentage);
-		const queueLagMin = Math.round(data.queue.queueLagSeconds / 60);
-		const pendingCount = data.queue.pendingCount;
-		const processingCount = data.queue.processingCount;
-		const activeAlertCount = data.summary.alerts.active;
-		const criticalAlertCount = data.summary.alerts.critical;
-		const warningAlertCount = data.summary.alerts.warning;
-
-		const pipelineStagesHtml = data.pipeline?.stages.map(stage => {
-			const rate = stage.outputRate ? `${stage.outputRate}/hr` : 'N/A';
+		const pipelineStagesHtml = pipelineTopology?.stages.map(stage => {
+			const rate = stage.outputRate ? `${stage.outputRate}/hr` : "N/A";
 			return `<div class="stage ${stage.status}"><div class="stage-name">${escapeHtml(stage.name)}</div><div class="stage-rate">${rate}</div></div>`;
-		}).join('<span class="arrow">→</span>') || '';
+		}).join('<span class="arrow">→</span>') || "";
 
-		const componentsHtml = data.components?.map(comp => {
-			const icon = comp.status === 'healthy' ? '✓' : comp.status === 'degraded' ? '!' : '✗';
-			const bg = comp.status === 'healthy' ? '#065f46' : comp.status === 'degraded' ? '#92400e' : '#991b1b';
-			const latency = comp.latencyMs ? ` · ${comp.latencyMs}ms` : '';
-			return `<div class="component"><div class="component-icon" style="background: ${bg}">${icon}</div><div class="component-info"><div class="component-name">${escapeHtml(comp.name)}</div><div class="component-status">${comp.status}${latency}</div></div></div>`;
-		}).join('') || '';
+		const componentsHtml = components?.map(comp => {
+			const icon = comp.status === "healthy" ? "✓" : comp.status === "degraded" ? "!" : "✗";
+			const border = comp.status === "healthy" ? "#34d399" : comp.status === "degraded" ? "#fbbf24" : "#f87171";
+			const latency = comp.latencyMs ? ` · ${comp.latencyMs}ms` : "";
+			return `<div class="component" style="border-color: ${border}"><div class="component-icon" style="border-color: ${border}">${icon}</div><div class="component-info"><div class="component-name">${escapeHtml(comp.name)}</div><div class="component-status">${comp.status}${latency}</div></div></div>`;
+		}).join("") || "";
 
-		const alertsHtml = data.activeAlerts?.length > 0
-			? data.activeAlerts.map(alert => {
+		const alertsHtml = alerts?.length > 0
+			? alerts.slice(0, 5).map(alert => {
 				const date = new Date(alert.createdAt * 1000).toLocaleString();
 				return `<div class="alert-item ${alert.severity}"><div class="alert-title">${escapeHtml(alert.message)}</div><div class="alert-meta">${escapeHtml(alert.alertType)} · ${date}</div></div>`;
-			}).join('')
-			: '<div style="color: #64748b; padding: 20px;">No active alerts</div>';
+			}).join("")
+			: '<div class="empty-state">No active alerts</div>';
+
+		const sourcesHtml = (sources.results ?? []).slice(0, 8).map((s: unknown) => {
+			const src = s as { source_id: string; name: string; type: string; status: string };
+			const statusClass = src.status === "active" ? "status-active" : src.status === "paused" ? "status-paused" : "status-inactive";
+			return `<div class="source-row">
+				<div class="source-info">
+					<div class="source-name">${escapeHtml(src.name)}</div>
+					<div class="source-meta">${src.type} · <span class="${statusClass}">${src.status}</span></div>
+				</div>
+				<div class="source-actions">
+					<button class="btn btn-sm btn-secondary" onclick="triggerSource('${src.source_id}')">Trigger</button>
+				</div>
+			</div>`;
+		}).join("") || '<div class="empty-state">No sources configured</div>';
+
+		const runsHtml = (runRows.results ?? []).map((r: unknown) => {
+			const run = r as { run_id: string; source_id: string; source_name: string; status: string; record_count: number; created_at: number };
+			const statusClass = `run-status-${run.status}`;
+			const time = new Date(run.created_at * 1000).toLocaleString();
+			return `<tr>
+				<td><div class="mono">${run.run_id.slice(0, 8)}...</div></td>
+				<td>${escapeHtml(run.source_name)}</td>
+				<td><span class="badge ${statusClass}">${run.status}</span></td>
+				<td>${run.record_count}</td>
+				<td class="mono">${time}</td>
+			</tr>`;
+		}).join("") || '<tr><td colspan="5" class="empty-state">No runs yet</td></tr>';
 
 		const wsProtocol = c.req.url.startsWith("https:") ? "wss:" : "ws:";
 		const wsHost = new URL(c.req.url).host;
@@ -301,9 +301,12 @@ app.get("/dashboard", async (c) => {
 			activeAlertCount,
 			criticalAlertCount,
 			warningAlertCount,
+			artifactCount: artifactCount?.count ?? 0,
 			pipelineStagesHtml,
 			componentsHtml,
 			alertsHtml,
+			sourcesHtml,
+			runsHtml,
 			wsUrl,
 		});
 
@@ -311,21 +314,21 @@ app.get("/dashboard", async (c) => {
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		return c.html(`<!DOCTYPE html>
-<html><body style="background:#0f172a;color:#f87171;padding:40px;font-family:sans-serif;">
+<html><body style="background:#FAFAF8;color:#9B2C2C;padding:40px;font-family:sans-serif;">
 <h1>Dashboard Error</h1>
 <p>${escapeHtml(message)}</p>
-<a href="/dashboard" style="color:#60a5fa">Retry</a>
+<a href="/dashboard" style="color:#C87A42">Retry</a>
 </body></html>`, 500);
 	}
 });
 
 function escapeHtml(text: string): string {
 	return text
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#039;');
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#039;");
 }
 
 interface DashboardHtmlParams {
@@ -342,9 +345,12 @@ interface DashboardHtmlParams {
 	activeAlertCount: number;
 	criticalAlertCount: number;
 	warningAlertCount: number;
+	artifactCount: number;
 	pipelineStagesHtml: string;
 	componentsHtml: string;
 	alertsHtml: string;
+	sourcesHtml: string;
+	runsHtml: string;
 	wsUrl: string;
 }
 
@@ -356,184 +362,323 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta http-equiv="refresh" content="30">
 	<title>Uplink Connect - System Dashboard</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet">
 	<style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-			background: #0f172a;
-			color: #e2e8f0;
-			line-height: 1.6;
+		:root {
+			--carbon: #1C1C1C;
+			--graphite: #3D3D3D;
+			--forge: #C87A42;
+			--forge-hover: #A86435;
+			--white: #FAFAF8;
+			--workbench: #F0EEEA;
+			--sawdust: #E8E5DF;
+			--grain: #D5D0C9;
+			--success: #2D6A4F;
+			--warning: #B35900;
+			--danger: #9B2C2C;
 		}
-		.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+		body {
+			font-family: 'Source Sans 3', system-ui, sans-serif;
+			background: var(--white);
+			color: var(--carbon);
+			line-height: 1.55;
+		}
+		h1, h2, h3, .display {
+			font-family: 'DM Sans', system-ui, sans-serif;
+			font-weight: 600;
+			letter-spacing: -0.01em;
+		}
+		.mono {
+			font-family: 'IBM Plex Mono', ui-monospace, monospace;
+			font-size: 0.9em;
+		}
+		.container { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
 		header {
-			background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-			padding: 30px;
-			border-radius: 12px;
-			margin-bottom: 30px;
-			border: 1px solid #475569;
+			background: linear-gradient(160deg, var(--workbench) 0%, var(--sawdust) 100%);
+			border: 1px solid var(--grain);
+			border-radius: 14px;
+			padding: 24px;
+			margin-bottom: 20px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			flex-wrap: wrap;
 		}
 		header h1 {
-			font-size: 2rem;
-			background: linear-gradient(90deg, #60a5fa, #a78bfa);
-			-webkit-background-clip: text;
-			-webkit-text-fill-color: transparent;
-			margin-bottom: 10px;
+			font-size: 1.6rem;
+			color: var(--carbon);
+			margin-bottom: 4px;
+		}
+		header p {
+			color: var(--graphite);
+			font-size: 0.95rem;
 		}
 		.status-badge {
-			display: inline-block;
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
 			padding: 6px 12px;
-			border-radius: 20px;
-			font-size: 0.875rem;
+			border-radius: 8px;
+			font-size: 0.8rem;
 			font-weight: 600;
 			text-transform: uppercase;
+			border: 1px solid transparent;
 		}
-		.status-healthy { background: #065f46; color: #34d399; }
-		.status-degraded { background: #92400e; color: #fbbf24; }
-		.status-unhealthy { background: #991b1b; color: #f87171; }
+		.status-badge::before {
+			content: "";
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: currentColor;
+		}
+		.status-healthy { background: rgba(45,106,79,0.12); color: var(--success); border-color: rgba(45,106,79,0.2); }
+		.status-degraded { background: rgba(179,89,0,0.12); color: var(--warning); border-color: rgba(179,89,0,0.2); }
+		.status-unhealthy { background: rgba(155,44,44,0.12); color: var(--danger); border-color: rgba(155,44,44,0.2); }
 		.grid {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-			gap: 20px;
-			margin-bottom: 30px;
+			grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+			gap: 16px;
+			margin-bottom: 20px;
 		}
 		.card {
-			background: #1e293b;
+			background: var(--workbench);
+			border: 1px solid var(--grain);
 			border-radius: 12px;
-			padding: 24px;
-			border: 1px solid #334155;
+			padding: 18px;
 		}
 		.card h3 {
-			color: #94a3b8;
-			font-size: 0.875rem;
+			color: var(--graphite);
+			font-size: 0.8rem;
 			text-transform: uppercase;
-			letter-spacing: 0.05em;
-			margin-bottom: 12px;
+			letter-spacing: 0.04em;
+			margin-bottom: 10px;
 		}
 		.metric {
-			font-size: 2.5rem;
+			font-size: 2rem;
 			font-weight: 700;
-			color: #f8fafc;
+			color: var(--carbon);
 		}
 		.metric-sub {
-			font-size: 0.875rem;
-			color: #64748b;
+			font-size: 0.85rem;
+			color: var(--graphite);
 			margin-top: 4px;
 		}
-		.trend-up { color: #34d399; }
-		.trend-down { color: #f87171; }
+		.trend-up { color: var(--success); }
+		.trend-down { color: var(--danger); }
 		.pipeline {
 			display: flex;
 			align-items: center;
 			gap: 10px;
-			margin: 20px 0;
+			margin: 16px 0;
 			flex-wrap: wrap;
 		}
 		.stage {
-			background: #334155;
-			padding: 16px 24px;
-			border-radius: 8px;
+			background: var(--white);
+			padding: 14px 18px;
+			border-radius: 10px;
 			text-align: center;
-			min-width: 120px;
+			min-width: 110px;
 			border: 2px solid transparent;
 		}
-		.stage.healthy { border-color: #34d399; }
-		.stage.degraded { border-color: #fbbf24; }
-		.stage.unhealthy { border-color: #f87171; }
-		.stage-name { font-weight: 600; margin-bottom: 4px; }
-		.stage-rate { font-size: 0.75rem; color: #94a3b8; }
+		.stage.healthy { border-color: var(--success); }
+		.stage.degraded { border-color: var(--warning); }
+		.stage.unhealthy { border-color: var(--danger); }
+		.stage-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+		.stage-rate { font-size: 0.75rem; color: var(--graphite); }
 		.arrow {
-			color: #64748b;
-			font-size: 1.5rem;
+			color: var(--grain);
+			font-size: 1.25rem;
 		}
-		.alerts {
-			margin-top: 20px;
-		}
-		.alert-item {
-			background: #334155;
-			padding: 16px;
-			border-radius: 8px;
-			margin-bottom: 12px;
-			border-left: 4px solid;
-		}
-		.alert-item.critical { border-left-color: #f87171; }
-		.alert-item.warning { border-left-color: #fbbf24; }
-		.alert-title { font-weight: 600; margin-bottom: 4px; }
-		.alert-meta { font-size: 0.875rem; color: #64748b; }
 		.components {
 			display: grid;
-			grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-			gap: 12px;
-			margin-top: 20px;
+			grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+			gap: 10px;
+			margin-top: 14px;
 		}
 		.component {
-			background: #334155;
-			padding: 16px;
-			border-radius: 8px;
+			background: var(--white);
+			padding: 14px;
+			border-radius: 10px;
 			display: flex;
 			align-items: center;
-			gap: 12px;
+			gap: 10px;
+			border: 1px solid transparent;
 		}
 		.component-icon {
-			width: 40px;
-			height: 40px;
+			width: 34px;
+			height: 34px;
 			border-radius: 8px;
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			font-size: 1.25rem;
+			font-size: 1rem;
+			border: 1px solid currentColor;
 		}
 		.component-info { flex: 1; }
-		.component-name { font-weight: 600; font-size: 0.875rem; }
-		.component-status { font-size: 0.75rem; color: #64748b; }
-		.refresh-btn {
-			background: #3b82f6;
-			color: white;
-			border: none;
-			padding: 12px 24px;
-			border-radius: 8px;
-			cursor: pointer;
-			font-weight: 600;
-			margin-top: 20px;
+		.component-name { font-weight: 600; font-size: 0.85rem; }
+		.component-status { font-size: 0.75rem; color: var(--graphite); }
+		.alert-item {
+			background: var(--white);
+			padding: 14px;
+			border-radius: 10px;
+			margin-bottom: 10px;
+			border-left: 3px solid;
 		}
-		.refresh-btn:hover { background: #2563eb; }
-		.timestamp {
-			color: #64748b;
-			font-size: 0.875rem;
-			margin-top: 10px;
-		}
+		.alert-item.critical { border-left-color: var(--danger); }
+		.alert-item.warning { border-left-color: var(--warning); }
+		.alert-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+		.alert-meta { font-size: 0.8rem; color: var(--graphite); }
 		.nav {
 			display: flex;
-			gap: 16px;
+			gap: 10px;
 			margin-bottom: 20px;
 			flex-wrap: wrap;
 		}
-		.nav a {
-			color: #60a5fa;
+		.nav a, .nav button {
+			color: var(--graphite);
 			text-decoration: none;
-			font-size: 0.875rem;
+			font-weight: 500;
+			font-size: 0.9rem;
+			padding: 8px 12px;
+			border-radius: 8px;
+			background: var(--workbench);
+			border: 1px solid var(--grain);
+			transition: background .15s ease, color .15s ease;
+			cursor: pointer;
 		}
-		.nav a:hover {
-			text-decoration: underline;
+		.nav a:hover, .nav button:hover {
+			background: var(--sawdust);
+			color: var(--carbon);
+		}
+		.source-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 12px 0;
+			border-bottom: 1px solid var(--grain);
+		}
+		.source-row:last-child { border-bottom: none; }
+		.source-name { font-weight: 600; font-size: 0.9rem; }
+		.source-meta { font-size: 0.8rem; color: var(--graphite); margin-top: 2px; }
+		.status-active { color: var(--success); font-weight: 600; }
+		.status-paused { color: var(--warning); font-weight: 600; }
+		.status-inactive { color: var(--graphite); }
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 6px;
+			padding: 8px 14px;
+			border-radius: 8px;
+			border: 1px solid transparent;
+			font-weight: 600;
+			font-size: 0.9rem;
+			cursor: pointer;
+			transition: transform .05s ease, background .15s ease, border-color .15s ease;
+		}
+		.btn:active { transform: translateY(1px); }
+		.btn-primary {
+			background: var(--forge);
+			color: var(--white);
+			border-color: var(--forge);
+		}
+		.btn-primary:hover { background: var(--forge-hover); border-color: var(--forge-hover); }
+		.btn-secondary {
+			background: var(--white);
+			color: var(--carbon);
+			border-color: var(--grain);
+		}
+		.btn-secondary:hover { background: var(--sawdust); }
+		.btn-sm { padding: 6px 10px; font-size: 0.8rem; }
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 0.9rem;
+		}
+		th, td {
+			padding: 10px;
+			text-align: left;
+			border-bottom: 1px solid var(--grain);
+		}
+		th {
+			font-weight: 600;
+			color: var(--graphite);
+			font-size: 0.75rem;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		tr:last-child td { border-bottom: none; }
+		.badge {
+			display: inline-block;
+			padding: 3px 8px;
+			border-radius: 6px;
+			font-size: 0.75rem;
+			font-weight: 600;
+		}
+		.run-status-received { background: rgba(61,61,61,0.1); color: var(--graphite); }
+		.run-status-collecting { background: rgba(200,122,66,0.15); color: var(--forge); }
+		.run-status-enqueued { background: rgba(179,89,0,0.12); color: var(--warning); }
+		.run-status-persisted { background: rgba(45,106,79,0.12); color: var(--success); }
+		.run-status-normalized { background: rgba(45,106,79,0.15); color: var(--success); }
+		.run-status-replayed { background: rgba(61,61,61,0.12); color: var(--graphite); }
+		.run-status-failed { background: rgba(155,44,44,0.12); color: var(--danger); }
+		.empty-state {
+			padding: 20px;
+			text-align: center;
+			color: var(--graphite);
+			font-size: 0.9rem;
+		}
+		.toast {
+			position: fixed;
+			top: 16px;
+			right: 16px;
+			padding: 12px 16px;
+			border-radius: 10px;
+			background: var(--carbon);
+			color: var(--white);
+			font-weight: 500;
+			box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+			transform: translateY(-120%);
+			opacity: 0;
+			transition: transform .25s ease, opacity .25s ease;
+			z-index: 1000;
+		}
+		.toast.show { transform: translateY(0); opacity: 1; }
+		.toast.error { background: var(--danger); }
+		.toast.success { background: var(--success); }
+		#ws-status {
+			font-size: 0.8rem;
+			color: var(--graphite);
+			margin-top: 8px;
+		}
+		.section-title {
+			font-size: 1rem;
+			font-weight: 600;
+			margin-bottom: 10px;
+			color: var(--carbon);
 		}
 	</style>
 </head>
 <body>
 	<div class="container">
 		<header>
-			<h1>Uplink Connect</h1>
-			<p>Data Ingestion Platform Dashboard</p>
+			<div>
+				<h1>Uplink Connect</h1>
+				<p>Data Ingestion Platform Dashboard</p>
+			</div>
 			<span class="status-badge status-${p.overallStatus}">${p.overallStatus}</span>
-			<div class="timestamp">Last updated: ${new Date().toLocaleString()} (auto-refreshes every 30s)</div>
 		</header>
 
 		<div class="nav">
 			<a href="/dashboard">Dashboard</a>
 			<a href="/scheduler">Scheduler</a>
-			<a href="/internal/dashboard/v2">API (v2)</a>
-			<a href="/internal/health/topology">Topology</a>
-			<a href="/internal/health/components">Components</a>
-			<a href="/internal/settings">Settings</a>
-			<a href="/internal/audit-log">Audit Log</a>
+			<a href="/internal/settings" target="_blank">Settings API</a>
+			<a href="/internal/audit-log" target="_blank">Audit Log</a>
+			<button onclick="location.reload()">Refresh</button>
 		</div>
 
 		<div class="grid">
@@ -565,6 +710,11 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 					<span class="trend-down">${p.criticalAlertCount} critical</span> · ${p.warningAlertCount} warning
 				</div>
 			</div>
+			<div class="card">
+				<h3>Artifacts</h3>
+				<div class="metric">${p.artifactCount}</div>
+				<div class="metric-sub">Total stored in R2</div>
+			</div>
 		</div>
 
 		<div class="card">
@@ -574,14 +724,13 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			</div>
 		</div>
 
-		<div class="grid">
+		<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
 			<div class="card">
 				<h3>Component Health</h3>
 				<div class="components">
 					${p.componentsHtml}
 				</div>
 			</div>
-
 			<div class="card">
 				<h3>Active Alerts</h3>
 				<div class="alerts">
@@ -590,23 +739,64 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			</div>
 		</div>
 
-		<form action="/dashboard" method="GET">
-			<button type="submit" class="refresh-btn">Refresh Dashboard</button>
-		</form>
-		<div id="ws-status" style="margin-top: 10px; font-size: 0.75rem; color: #64748b;">Connecting to real-time updates...</div>
+		<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+			<div class="card">
+				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+					<h3>Sources</h3>
+					<a href="/scheduler" style="font-size:0.8rem;color:var(--forge);font-weight:600;">Manage →</a>
+				</div>
+				<div>${p.sourcesHtml}</div>
+			</div>
+			<div class="card">
+				<h3>Recent Runs</h3>
+				<div style="overflow-x:auto;">
+					<table>
+						<thead>
+							<tr><th>Run</th><th>Source</th><th>Status</th><th>Records</th><th>Time</th></tr>
+						</thead>
+						<tbody>${p.runsHtml}</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<div id="ws-status">Connecting to real-time updates...</div>
 	</div>
+
+	<div id="toast" class="toast"></div>
+
 	<script>
 	(function() {
 		const wsUrl = '${p.wsUrl}';
 		const statusEl = document.getElementById('ws-status');
+		const toast = document.getElementById('toast');
 		let ws;
 		let reconnectTimer;
+
+		function showToast(message, type) {
+			toast.textContent = message;
+			toast.className = 'toast show ' + (type || '');
+			setTimeout(() => { toast.className = 'toast'; }, 3000);
+		}
+
+		window.triggerSource = async function(sourceId) {
+			try {
+				const res = await fetch('/internal/sources/' + sourceId + '/trigger', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ triggeredBy: 'dashboard' })
+				});
+				if (!res.ok) throw new Error('Trigger failed');
+				showToast('Triggered ' + sourceId, 'success');
+			} catch (e) {
+				showToast('Trigger failed', 'error');
+			}
+		};
 
 		function connect() {
 			ws = new WebSocket(wsUrl);
 			ws.onopen = function() {
 				statusEl.textContent = 'Live updates connected';
-				statusEl.style.color = '#34d399';
 				ws.send(JSON.stringify({ type: 'subscribe', topics: ['metrics', 'all'] }));
 			};
 			ws.onmessage = function(event) {
@@ -621,46 +811,30 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 			};
 			ws.onclose = function() {
 				statusEl.textContent = 'Reconnecting...';
-				statusEl.style.color = '#fbbf24';
 				reconnectTimer = setTimeout(connect, 3000);
 			};
 			ws.onerror = function() {
 				statusEl.textContent = 'Connection error';
-				statusEl.style.color = '#f87171';
 			};
 		}
 
 		function updateMetrics(data) {
 			if (data.sources && data.sources.total != null) {
-				const cards = document.querySelectorAll('.card');
-				if (cards[0]) {
-					const metric = cards[0].querySelector('.metric');
-					if (metric) metric.textContent = data.sources.total;
-				}
+				const cards = document.querySelectorAll('.card .metric');
+				if (cards[0]) cards[0].textContent = data.sources.total;
 			}
 			if (data.runs24h) {
 				const total = Object.values(data.runs24h).reduce((a, b) => a + b, 0);
-				const cards = document.querySelectorAll('.card');
-				if (cards[1]) {
-					const metric = cards[1].querySelector('.metric');
-					if (metric) metric.textContent = total;
-				}
+				const cards = document.querySelectorAll('.card .metric');
+				if (cards[1]) cards[1].textContent = total;
 			}
 			if (data.queue) {
-				const cards = document.querySelectorAll('.card');
-				if (cards[2]) {
-					const metric = cards[2].querySelector('.metric');
-					const sub = cards[2].querySelector('.metric-sub');
-					if (metric) metric.textContent = (data.queue.pending || 0) + 'm';
-					if (sub) sub.textContent = (data.queue.pending || 0) + ' pending · ' + (data.queue.processing || 0) + ' processing';
-				}
+				const cards = document.querySelectorAll('.card .metric');
+				if (cards[2]) cards[2].textContent = (data.queue.pending || 0) + 'm';
 			}
 			if (data.alerts) {
-				const cards = document.querySelectorAll('.card');
-				if (cards[3]) {
-					const metric = cards[3].querySelector('.metric');
-					if (metric) metric.textContent = data.alerts.active || 0;
-				}
+				const cards = document.querySelectorAll('.card .metric');
+				if (cards[3]) cards[3].textContent = data.alerts.active || 0;
 			}
 		}
 
