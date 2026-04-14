@@ -46,11 +46,13 @@ uplink-ops       → Protected operations API
 - ✅ Workflow-driven collection with automatic retries
 - ✅ Queue-based async processing with DLQ
 - ✅ R2 raw artifact storage with structured key paths
-- ✅ D1 operational data store (16 tables, 9 migrations)
+- ✅ D1 operational data store (17 tables, 10 migrations)
 - ✅ Entity normalization, deduplication, and relationship linking
 - ✅ Vectorize semantic search
 - ✅ Comprehensive metrics and alerting with Analytics Engine
 - ✅ Visual HTML dashboard with WebSocket real-time updates
+- ✅ Scheduler settings UI with per-source cron configuration
+- ✅ Dynamic cron-based source triggering (no hard-coded schedules)
 - ✅ RAG-based error analysis agent via WebSocket
 - ✅ Data export API (JSON, CSV, NDJSON)
 - ✅ Universal notification system (8 providers)
@@ -67,7 +69,7 @@ uplink-ops       → Protected operations API
 ### API Surface
 
 - **uplink-edge**: 4 endpoints (public)
-- **uplink-core**: 45+ endpoints (internal)
+- **uplink-core**: 50+ endpoints (internal)
 - **uplink-ops**: 7 endpoints (protected)
 - **uplink-browser**: 2 endpoints (internal)
 
@@ -92,6 +94,7 @@ UplinkConnect/
 │   │   │   │   ├── alerting.ts       # Alert system
 │   │   │   │   ├── health-monitor.ts # Component health checks
 │   │   │   │   ├── settings.ts       # Platform settings
+│   │   │   │   ├── scheduler.ts      # Source schedule CRUD and cron grouping
 │   │   │   │   ├── tracing.ts        # Run tracing and lineage
 │   │   │   │   ├── processing.ts     # Queue batch processing
 │   │   │   │   ├── retry.ts          # Retry logic, circuit breakers
@@ -104,9 +107,9 @@ UplinkConnect/
 │   │   │   │   ├── notification-dispatcher.ts # DO for rate-limited notifications
 │   │   │   │   ├── dashboard-stream.ts      # DO for real-time dashboard
 │   │   │   │   └── error-agent.ts           # DO for RAG error diagnosis
-│   │   │   ├── routes/               # 14 route modules
+│   │   │   ├── routes/               # 15 route modules
 │   │   │   └── test/                 # 554+ tests (unit, integration, e2e, live)
-│   │   ├── migrations/       # 9 SQL migrations
+│   │   ├── migrations/       # 10 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
 │   │   └── package.json      # @uplink/core
 │   ├── uplink-browser/       # Browser collection

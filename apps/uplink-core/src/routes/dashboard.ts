@@ -528,6 +528,7 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 
 		<div class="nav">
 			<a href="/dashboard">Dashboard</a>
+			<a href="/scheduler">Scheduler</a>
 			<a href="/internal/dashboard/v2">API (v2)</a>
 			<a href="/internal/health/topology">Topology</a>
 			<a href="/internal/health/components">Components</a>

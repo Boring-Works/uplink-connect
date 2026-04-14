@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Dashboard Enhancements
 - Updated `/dashboard` HTML with WebSocket client for real-time metric updates
 - Auto-reconnect on connection loss
+- Added `/scheduler` HTML page for per-source cron schedule management
+  - Boring Portfolio `boringlabs` aesthetic (warm industrial, Forge Orange accent)
+  - Add/edit/delete schedules with enable/disable toggles
+  - Manual trigger button for immediate runs
+  - Source dropdown populated from active source configs
+
+#### Scheduler & Dynamic Cron
+- New `source_schedules` table (migration 0010)
+- New `scheduler.ts` library with CRUD and cron-grouped query functions
+- New `/internal/schedules` REST API (GET, POST, PUT, DELETE, trigger)
+- `triggerScheduledSources()` now reads enabled schedules from D1 dynamically
+- Hard-coded scheduled triggers fully removed — all scheduling is data-driven
 - Live updates for sources count, runs, queue depth, and alerts
 
 #### Infrastructure

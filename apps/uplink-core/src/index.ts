@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { Env } from "./types";
 import { ensureInternalAuth } from "./lib/auth";
 import { processQueueBatch } from "./lib/processing";
+import { getEnabledSchedulesByCron } from "./lib/scheduler";
+import { getCoordinatorStub, acquireLease } from "./lib/coordinator-client";
 import { SourceCoordinator } from "./durable/source-coordinator";
 import { BrowserManagerDO } from "./durable/browser-manager";
 import { NotificationDispatcher } from "./durable/notification-dispatcher";
@@ -25,6 +27,7 @@ import browserRoutes from "./routes/browser";
 import notificationRoutes from "./routes/notifications";
 import agentRoutes from "./routes/agents";
 import exportRoutes from "./routes/export";
+import schedulerRoutes from "./routes/scheduler";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -55,6 +58,7 @@ app.route("/", browserRoutes);
 app.route("/", notificationRoutes);
 app.route("/", agentRoutes);
 app.route("/", exportRoutes);
+app.route("/", schedulerRoutes);
 
 async function runSyntheticMonitoring(env: Env): Promise<void> {
 	const endpoints = [
@@ -85,10 +89,41 @@ async function runSyntheticMonitoring(env: Env): Promise<void> {
 	}
 }
 
-async function triggerScheduledSources(_env: Env, _cron: string): Promise<void> {
-	// Scheduled source triggers are intentionally disabled to avoid hard-coding.
-	// Future: read scheduled sources from platform_settings or a dedicated scheduler table.
-	// For now, use the dashboard or POST /internal/sources/:id/trigger for manual/ad-hoc runs.
+async function triggerScheduledSources(env: Env, cron: string): Promise<void> {
+	const byCron = await getEnabledSchedulesByCron(env.CONTROL_DB);
+	const sourceIds = byCron[cron];
+	if (!sourceIds || sourceIds.length === 0) return;
+
+	for (const sourceId of sourceIds) {
+		try {
+			const coordinator = getCoordinatorStub(env, sourceId);
+			const lease = await acquireLease(coordinator, {
+				requestedBy: "scheduler-cron",
+				ttlSeconds: 300,
+			});
+			if (!lease.acquired) {
+				console.warn(`[scheduler] could not acquire lease for ${sourceId}: ${lease.reason}`);
+				continue;
+			}
+			if (!lease.leaseToken) {
+				console.warn(`[scheduler] no lease token for ${sourceId}`);
+				continue;
+			}
+
+			const doUrl = new URL("https://uplink-core.codyboring.workers.dev/collect");
+			doUrl.searchParams.set("sourceId", sourceId);
+			doUrl.searchParams.set("leaseToken", lease.leaseToken);
+			doUrl.searchParams.set("triggeredBy", "scheduler-cron");
+
+			// Fire-and-forget
+			coordinator.fetch(doUrl.toString(), { method: "POST" }).catch((err) => {
+				console.error(`[scheduler] cron trigger failed for ${sourceId}:`, err);
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(`[scheduler] error triggering ${sourceId}:`, message);
+		}
+	}
 }
 
 export default {

@@ -1134,6 +1134,125 @@ Get audit trail of operator actions.
 
 ---
 
+### GET /internal/schedules
+
+List all source schedules.
+
+**Query Parameters:**
+- `sourceId` - Filter by source
+- `enabledOnly` - Only return enabled schedules (`true`)
+
+**Response:**
+```json
+{
+  "schedules": [
+    {
+      "scheduleId": "uuid",
+      "sourceId": "usgs-earthquakes",
+      "cronExpression": "0 * * * *",
+      "enabled": true,
+      "label": "Hourly fetch",
+      "createdAt": 1713091200,
+      "updatedAt": 1713091200
+    }
+  ]
+}
+```
+
+---
+
+### POST /internal/schedules
+
+Create a new source schedule.
+
+**Request Body:**
+```json
+{
+  "sourceId": "usgs-earthquakes",
+  "cronExpression": "0 * * * *",
+  "enabled": true,
+  "label": "Hourly fetch"
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+  "schedule": { ... }
+}
+```
+
+---
+
+### GET /internal/schedules/:scheduleId
+
+Get a single schedule.
+
+**Response:**
+```json
+{
+  "schedule": { ... }
+}
+```
+
+---
+
+### PUT /internal/schedules/:scheduleId
+
+Update a schedule.
+
+**Request Body:**
+```json
+{
+  "cronExpression": "*/30 * * * *",
+  "enabled": false,
+  "label": "Every 30 min"
+}
+```
+
+**Response:**
+```json
+{
+  "schedule": { ... }
+}
+```
+
+---
+
+### DELETE /internal/schedules/:scheduleId
+
+Delete a schedule.
+
+**Response:** `200 OK`
+```json
+{
+  "ok": true
+}
+```
+
+---
+
+### POST /internal/schedules/:scheduleId/trigger
+
+Manually trigger the source associated with a schedule.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "triggeredAt": "2026-04-14T18:00:00.000Z",
+  "sourceId": "usgs-earthquakes"
+}
+```
+
+---
+
+### GET /scheduler
+
+HTML scheduler settings page. Allows adding, editing, enabling/disabling, and manually triggering source schedules.
+
+---
+
 ### GET /internal/stream/dashboard
 
 WebSocket endpoint for real-time dashboard metrics. Upgrades to WebSocket connection.

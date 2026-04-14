@@ -230,7 +230,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ All tests pass (554)
 - ✅ Biome linting clean
 - ✅ No secrets in code
-- ✅ Core worker refactored into 14 route modules
+- ✅ Core worker refactored into 15 route modules
 - ✅ CI/CD pipeline configured
 - ✅ Synthetic monitoring active
 - ✅ 2 new Durable Objects (DashboardStreamDO, ErrorAgentDO)
@@ -238,7 +238,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ DO alarms replace setInterval in all DOs
 - ✅ Constant-time auth comparisons across all workers
 - ✅ Real public API data flowing end-to-end
-- ✅ Hard-coded scheduled triggers removed (cost safety)
+- ✅ Dynamic scheduler with per-source cron configuration live
 
 ---
 
@@ -269,7 +269,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - [x] Apply AST-based chunking from RepoMind patterns
 - [x] Fix all P0 bugs (DO alarms, auth timing, hash length, fetch binding, queue config)
 - [x] Wire up live public data sources (USGS earthquakes, GitHub events, HN stories, exchange rates)
-- [x] Remove hard-coded scheduled triggers (prevent unexpected costs until settings UI exists)
+- [x] Build scheduler settings UI with per-source cron configuration
+- [x] Replace hard-coded scheduled triggers with dynamic D1-driven scheduler
 
 ### Medium Value
 - [x] Split large files (db.ts, index.ts)
@@ -332,7 +333,8 @@ The platform is ready for daily use and can reliably ingest, process, and track 
   - Proves: Financial data, deeply nested JSON
 - All verified: entities in D1, artifacts in R2, dashboard shows live flow
 - Setup script: `scripts/setup-public-sources.sh`
-- **Important:** Scheduled auto-triggers are disabled. Trigger manually via API or dashboard until scheduler settings UI is built.
+- Scheduler settings UI is live at `/scheduler` — per-source cron schedules can be configured dynamically
+- `triggerScheduledSources()` reads enabled schedules from D1 and triggers matching sources automatically
 
 ### P0 Bug Fixes
 - Replaced `setInterval` with DO alarms in `DashboardStreamDO` and `NotificationDispatcher`
@@ -342,7 +344,7 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - Fixed `fastStableHash` length to meet schema requirement (>=16 chars)
 - Fixed malformed `wrangler.jsonc` (triggers nested inside queues)
 - Removed misplaced notification endpoint from `browser.ts`
-- Removed hard-coded scheduled auto-triggers to prevent unexpected costs
+- Replaced hard-coded scheduled triggers with dynamic D1-driven scheduler
 
 ### DevOps & Monitoring
 - **GitHub Actions CI/CD**: Automated testing on PRs and pushes to main

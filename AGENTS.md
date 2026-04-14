@@ -7,6 +7,7 @@ Uplink Connect is a **Cloudflare-native data ingestion platform** built for reli
 **Repository:** https://github.com/Boring-Works/uplink-connect  
 **Live Deployment:** https://uplink-core.codyboring.workers.dev  
 **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard  
+**Scheduler:** https://uplink-core.codyboring.workers.dev/scheduler  
 **License:** MIT
 
 ---
@@ -109,6 +110,7 @@ pnpm dev:ops       # Terminal 4
 - `apps/uplink-core/src/lib/processing.ts` - Queue batch processing
 - `apps/uplink-core/src/lib/alerting.ts` - Alert system
 - `apps/uplink-core/src/lib/health-monitor.ts` - Health monitoring
+- `apps/uplink-core/src/lib/scheduler.ts` - Source schedule CRUD and cron grouping
 - `apps/uplink-core/src/durable/source-coordinator.ts` - DO implementation
 - `apps/uplink-core/src/durable/dashboard-stream.ts` - Real-time dashboard WebSocket DO
 - `apps/uplink-core/src/durable/error-agent.ts` - RAG-based error analysis DO
@@ -120,7 +122,7 @@ pnpm dev:ops       # Terminal 4
 - `packages/normalizers/src/index.ts` - Entity normalization and code chunking
 
 ### Database
-- `apps/uplink-core/migrations/*.sql` - 9 migration files
+- `apps/uplink-core/migrations/*.sql` - 10 migration files
 
 ---
 
@@ -198,7 +200,7 @@ BROWSER_API_KEY=browser-dev-key
 1. Add route module in `apps/uplink-core/src/routes/`
 2. Wire up in `apps/uplink-core/src/index.ts`
 3. Add Zod schema in `packages/contracts/src/index.ts` if needed
-4. Add DB function in `apps/uplink-core/src/lib/db.ts` if needed
+4. Add DB function in `apps/uplink-core/src/lib/db.ts` or `apps/uplink-core/src/lib/scheduler.ts` if needed
 5. Add tests
 6. Update API.md documentation
 
