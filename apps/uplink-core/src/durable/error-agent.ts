@@ -21,6 +21,7 @@ interface AgentMessage {
 
 const MESSAGES_KEY = "messages";
 const MAX_MESSAGES = 50;
+const MAX_CLIENTS = 20;
 
 export class ErrorAgentDO extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -30,15 +31,22 @@ export class ErrorAgentDO extends DurableObject<Env> {
 		);
 	}
 
+	private clients: Set<WebSocket> = new Set();
+
 	async fetch(request: Request): Promise<Response> {
 		const upgrade = request.headers.get("Upgrade");
 		if (upgrade !== "websocket") {
 			return new Response("Expected websocket", { status: 400 });
 		}
 
+		if (this.clients.size >= MAX_CLIENTS) {
+			return new Response("Too many connections", { status: 503 });
+		}
+
 		const pair = new WebSocketPair();
 		const [client, server] = Object.values(pair);
 		this.ctx.acceptWebSocket(server);
+		this.clients.add(server);
 
 		return new Response(null, { status: 101, webSocket: client });
 	}
@@ -74,6 +82,14 @@ export class ErrorAgentDO extends DurableObject<Env> {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			ws.send(JSON.stringify({ type: "error", error: errorMessage }));
 		}
+	}
+
+	async webSocketClose(ws: WebSocket) {
+		this.clients.delete(ws);
+	}
+
+	async webSocketError(ws: WebSocket) {
+		this.clients.delete(ws);
 	}
 
 	private async getMessages(): Promise<ChatMessage[]> {

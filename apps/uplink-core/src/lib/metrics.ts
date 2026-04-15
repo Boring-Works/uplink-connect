@@ -67,7 +67,7 @@ export function writeMetric(
 	env.OPS_METRICS.writeDataPoint({
 		blobs,
 		doubles,
-		indexes: [params.index ?? crypto.randomUUID()],
+		indexes: [params.index ?? "default"],
 	});
 }
 
@@ -306,35 +306,44 @@ export async function getAllSourceMetrics(
 
 export async function getQueueMetrics(db: D1Database): Promise<QueueMetrics> {
 	const now = Math.floor(Date.now() / 1000);
+	const since = now - 86400; // Only look at last 24h to keep queries fast
 
 	const pendingResult = await db
 		.prepare(
 			`SELECT COUNT(*) as count FROM ingest_runs
-			WHERE status IN ('received', 'enqueued')`,
+			WHERE status IN ('received', 'enqueued')
+			AND created_at >= ?`,
 		)
+		.bind(since)
 		.first<{ count: number }>();
 
 	const processingResult = await db
 		.prepare(
 			`SELECT COUNT(*) as count FROM ingest_runs
-			WHERE status IN ('collecting', 'persisted')`,
+			WHERE status IN ('collecting', 'persisted')
+			AND created_at >= ?`,
 		)
+		.bind(since)
 		.first<{ count: number }>();
 
 	const failedResult = await db
 		.prepare(
 			`SELECT COUNT(*) as count FROM ingest_runs
-			WHERE status = 'failed'`,
+			WHERE status = 'failed'
+			AND created_at >= ?`,
 		)
+		.bind(since)
 		.first<{ count: number }>();
 
 	const oldestResult = await db
 		.prepare(
 			`SELECT received_at FROM ingest_runs
 			WHERE status IN ('received', 'enqueued', 'collecting', 'persisted')
+			AND created_at >= ?
 			ORDER BY received_at ASC
 			LIMIT 1`,
 		)
+		.bind(since)
 		.first<{ received_at: string }>();
 
 	const pendingCount = pendingResult?.count ?? 0;
@@ -384,7 +393,8 @@ export async function getEntityMetrics(db: D1Database): Promise<EntityMetrics> {
 		.prepare(
 			`SELECT source_id, COUNT(*) as count
 			FROM entities_current
-			GROUP BY source_id`,
+			GROUP BY source_id
+			LIMIT 1000`,
 		)
 		.all<{ source_id: string; count: number }>();
 

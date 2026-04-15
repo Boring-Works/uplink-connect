@@ -101,6 +101,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Export columns** - Fixed `/internal/export/runs` and `/internal/export/errors` to use actual D1 column names
 - **Edge internal key** - Fallback changed from empty string to `"missing"` for safer constant-time comparison
 
+#### Cost & Performance Protections
+- **Bounded D1 queries** - Added `LIMIT 100` to `evaluateStuckRuns` and `evaluateExpiredLeases`; added 24-hour time bounds to `getQueueMetrics`; added `LIMIT 1000` to `getEntityMetrics` GROUP BY
+- **Bounded fetch cache** - `fetchWithCache` now caps in-memory cache at 100 entries with FIFO eviction to prevent unbounded memory growth
+- **WebSocket connection limits** - `DashboardStreamDO` capped at 100 clients, `ErrorAgentDO` capped at 20 clients. Returns 503 when full
+- **Alarm leak fix** - `DashboardStreamDO` now cancels its alarm in `webSocketError` when no clients remain
+- **Fixed Analytics Engine index anti-pattern** - `writeMetric` now uses `"default"` index fallback instead of random UUID per call, preventing high-cardinality storage bloat
+- **Collection workflow timeouts** - `fetchFn` now respects `sourceLookup.policy.timeoutSeconds` (capped at 30s) via `AbortSignal`
+
 #### Bug Fixes (P0)
 - Fixed `ingest_queue_status` missing table crash in `DashboardStreamDO`
 - Replaced `setInterval` with DO alarms in `DashboardStreamDO` and `NotificationDispatcher`
@@ -110,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `fastStableHash` output length to meet `contentHash` schema requirement (>=16 chars)
 - Fixed malformed `wrangler.jsonc` where `triggers` was nested inside `queues`
 - Removed misplaced notification test endpoint from `browser.ts`
+- Fixed 404 after dashboard/scheduler login by adding `POST` route handlers
 
 ---
 

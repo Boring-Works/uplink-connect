@@ -37,6 +37,7 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 			});
 
 			const adapter = createSourceAdapter(sourceLookup.config.type);
+			const timeoutMs = Math.min(sourceLookup.policy.timeoutSeconds * 1000, 30000);
 			const adapterResult = await adapter.collect(
 				{
 					sourceId: sourceLookup.config.sourceId,
@@ -50,7 +51,11 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 					metadata: sourceLookup.config.metadata,
 				},
 				{
-					fetchFn: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+					fetchFn: (input: RequestInfo | URL, init?: RequestInit) => {
+						const controller = new AbortController();
+						const timer = setTimeout(() => controller.abort(), timeoutMs);
+						return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+					},
 					browserFetcher: this.env.UPLINK_BROWSER,
 					nowIso: toIsoNow,
 				},

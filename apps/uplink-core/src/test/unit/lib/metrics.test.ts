@@ -58,9 +58,9 @@ describe("metrics", () => {
 			expect(writtenDataPoints[0].indexes).toEqual(["run-123"]);
 		});
 
-		it("generates a random UUID index when not provided", () => {
-			writeMetric(mockEnv, { sourceId: "src-1", sourceType: "api", event: "test.event" });
-			expect(writtenDataPoints[0].indexes[0]).toMatch(/^[0-9a-f-]{36}$/);
+		it("uses a default index when not provided", () => {
+			writeMetric(mockEnv, { sourceId: "src-1", sourceType: "api", event: "test" });
+			expect(writtenDataPoints[0].indexes[0]).toBe("default");
 		});
 
 		it("throws when OPS_METRICS is missing", () => {

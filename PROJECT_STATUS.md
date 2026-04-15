@@ -195,10 +195,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 ### Workers Deployed
 | Worker | Status | Version ID |
 |--------|--------|------------|
-| uplink-core | ✅ Active | a4c41e4c-2b43-405f-8daf-2509beceb29a |
-| uplink-edge | ✅ Active | 38dd57dd-4370-48da-8e2d-e22d45ea631c |
-| uplink-ops | ✅ Active | f3cab1fd-e677-4e68-8b3f-a5d42a759843 |
-| uplink-browser | ✅ Active | 5bd9fc94-7059-4c4f-9412-313592ea9b69 |
+| uplink-core | ✅ Active | 4951f574-b6c9-4851-b13f-fa9bec42d53a |
+| uplink-edge | ✅ Active | 328cbbec-f8e6-40b2-8af5-016e960080ee |
+| uplink-ops | ✅ Active | ff2915c5-99a2-4b7d-97f3-a02318b6c3ba |
+| uplink-browser | ✅ Active | 9385c74f-239d-49dc-b856-a146fafec2e0 |
 
 ### Cloudflare Resources
 | Resource | ID/Name | Status |
@@ -220,7 +220,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | TypeScript Source Files | 47 |
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
-| Test Coverage | 409 tests |
+| Test Coverage | 587 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Last Verified | April 14, 2026 |
@@ -258,12 +258,13 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Expanded secret redaction — 70+ field patterns + secret-looking value detection, all replaced with `[REDACTED]`
 - ✅ URL credential sanitization — strips `user:pass` and redacts sensitive query params
 - ✅ Rate limit header parsing — OpenAI, Anthropic, and standard RFC formats
-- ✅ `fetchWithCache` — GET caching, exponential backoff, transient error retry, rate-limit wait handling
+- ✅ `fetchWithCache` — GET caching, exponential backoff, transient error retry, rate-limit wait handling, bounded to 100 cached entries
 - ✅ D1 metrics aggregation — single GROUP BY query with JSON aggregation for metadata counts
 - ✅ `retryWithDeduplication` — collect unique items across repeated operations
 - ✅ `sampleArray` — random sampling utility
 - ✅ Non-transient HTTP error fast-fail (400/401/404/422/501 = no retry)
 - ✅ Connection error detection for smarter retry classification
+- ✅ Cost protections — bounded D1 queries, WebSocket client limits (100/20), fixed AE indexes, collection workflow timeouts
 
 ---
 

@@ -417,7 +417,8 @@ export async function evaluateStuckRuns(
 			FROM ingest_runs
 			WHERE status IN ('collecting', 'enqueued', 'persisted')
 			AND created_at < ?
-			ORDER BY created_at ASC`,
+			ORDER BY created_at ASC
+			LIMIT 100`,
 		)
 		.bind(since)
 		.all<{
@@ -457,7 +458,8 @@ export async function evaluateExpiredLeases(
 			FROM source_runtime_snapshots
 			WHERE lease_expires_at IS NOT NULL
 			AND lease_expires_at < ?
-			ORDER BY lease_expires_at ASC`,
+			ORDER BY lease_expires_at ASC
+			LIMIT 100`,
 		)
 		.bind(now, now)
 		.all<{

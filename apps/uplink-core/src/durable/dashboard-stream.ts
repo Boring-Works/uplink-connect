@@ -14,6 +14,7 @@ interface DashboardMessage {
 
 const BROADCAST_INTERVAL_MS = 5000;
 const HEARTBEAT_INTERVAL_MS = 15000;
+const MAX_CLIENTS = 100;
 
 export class DashboardStreamDO extends DurableObject<Env> {
 	private clients: Map<WebSocket, DashboardClient> = new Map();
@@ -29,6 +30,10 @@ export class DashboardStreamDO extends DurableObject<Env> {
 		const upgrade = request.headers.get("Upgrade");
 		if (upgrade !== "websocket") {
 			return new Response("Expected websocket", { status: 400 });
+		}
+
+		if (this.clients.size >= MAX_CLIENTS) {
+			return new Response("Too many connections", { status: 503 });
 		}
 
 		const pair = new WebSocketPair();
@@ -85,6 +90,12 @@ export class DashboardStreamDO extends DurableObject<Env> {
 
 	async webSocketError(ws: WebSocket) {
 		this.clients.delete(ws);
+		if (this.clients.size === 0) {
+			const alarm = await this.ctx.storage.getAlarm();
+			if (alarm) {
+				await this.ctx.storage.deleteAlarm();
+			}
+		}
 	}
 
 	async alarm(): Promise<void> {

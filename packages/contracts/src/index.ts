@@ -1153,12 +1153,25 @@ export interface FetchWithCacheOptions extends RequestInit {
 
 // Simple in-memory cache for fetch responses (per-request isolation in Workers)
 const fetchCache = new Map<string, FetchCacheEntry>();
+const MAX_FETCH_CACHE_ENTRIES = 100;
 
 function buildCacheKey(url: RequestInfo, init?: RequestInit): string {
 	const urlString = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 	const method = init?.method ?? "GET";
 	const body = init?.body ? String(init.body) : "";
 	return `${method}:${urlString}:${body}`;
+}
+
+function pruneFetchCache(): void {
+	if (fetchCache.size <= MAX_FETCH_CACHE_ENTRIES) return;
+	// Evict oldest entries (first inserted) until under limit
+	const entriesToDelete = fetchCache.size - MAX_FETCH_CACHE_ENTRIES;
+	let deleted = 0;
+	for (const key of fetchCache.keys()) {
+		if (deleted >= entriesToDelete) break;
+		fetchCache.delete(key);
+		deleted++;
+	}
 }
 
 function isTransientFetchError(response: Response): boolean {
@@ -1284,6 +1297,7 @@ export async function fetchWithCache(
 
 			// Cache successful GET responses
 			if (isGet && cacheTtlMs !== undefined && cacheTtlMs > 0 && response.ok) {
+				pruneFetchCache();
 				fetchCache.set(cacheKey, {
 					response: response.clone(),
 					expiresAt: Date.now() + cacheTtlMs,
