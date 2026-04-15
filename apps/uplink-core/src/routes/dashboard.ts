@@ -187,6 +187,16 @@ app.get("/internal/dashboard/v2", async (c) => {
 	});
 });
 
+app.post("/dashboard", async (c) => {
+	const authCheck = await ensureDashboardAuth(c.req.raw, c.env, {
+		pageTitle: "Uplink Connect Dashboard",
+		returnPath: "/dashboard",
+	});
+	if (authCheck) return authCheck;
+	// If auth passed, redirect back to GET
+	return c.redirect("/dashboard", 302);
+});
+
 app.get("/dashboard", async (c) => {
 	const authCheck = await ensureDashboardAuth(c.req.raw, c.env, {
 		pageTitle: "Uplink Connect Dashboard",
