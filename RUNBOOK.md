@@ -1,7 +1,7 @@
 # Uplink Connect - Daily Operations Runbook
 
-**Version:** 0.2.2
-**Last Updated:** 2026-04-14
+**Version:** 0.2.3
+**Last Updated:** 2026-04-24
 **For:** Daily production operations
 
 ---
@@ -330,7 +330,98 @@ curl -i "https://uplink-core.codyboring.workers.dev/internal/agent/error" \
 
 ---
 
+### Issue: Dashboard Auth Loop (JSON POSTs Return 401)
+
+**Symptoms:**
+- API clients sending JSON to core endpoints get stuck in 401 loop
+- Dashboard password gate appears even for non-dashboard requests
+- Error logs show "Invalid form data" from `dashboard-auth.ts`
+
+**Root Cause:**
+- `dashboard-auth.ts` attempted to parse ALL POST requests as form data
+- JSON POSTs threw on `request.formData()`, fell through to password gate
+
+**Status:** ✅ Fixed April 24 — body parsing now content-type gated
+
+**Verification:**
+```bash
+# Should return 401 (not HTML password gate)
+curl -X POST https://uplink-core.codyboring.workers.dev/internal/runs \
+  -H "Content-Type: application/json" \
+  -d '{"test":true}'
+```
+
+---
+
+### Issue: Infinite DLQ Retry Loop
+
+**Symptoms:**
+- Same message retried indefinitely
+- Queue metrics show high retry count on single message
+- Error logs show repeated "DLQ send failed" but message never acked
+
+**Root Cause:**
+- `sendToDlq()` could throw if queue binding failed or network error
+- Uncaught exception prevented `message.ack()`, causing re-delivery
+
+**Status:** ✅ Fixed April 24 — DLQ sends wrapped in try/catch with fallback ack
+
+**If Seen:**
+- Check `wrangler logs` for "DLQ send failed, acking to prevent loop"
+- Verify DLQ queue binding is configured in wrangler.jsonc
+- Message will be lost if DLQ itself is unavailable (by design — prevents worse looping)
+
+---
+
+### Issue: Ops Proxy Returns 500 / Internal Errors
+
+**Symptoms:**
+- Ops API calls return 500 with "CORE_INTERNAL_KEY not configured"
+- Proxy requests reach core without `x-uplink-internal-key` header
+- Internal endpoints return 401 despite ops being configured
+
+**Root Cause:**
+- `proxyToCore()` did not verify `CORE_INTERNAL_KEY` env var was set
+- Missing secret caused empty auth header to be forwarded
+
+**Status:** ✅ Fixed April 24 — fails closed with 500 if secret missing
+
+**Resolution:**
+```bash
+# Verify secret is set
+npx wrangler secret list --name uplink-ops
+
+# If missing, set it:
+npx wrangler secret put CORE_INTERNAL_KEY --name uplink-ops
+```
+
+---
+
 ## Emergency Procedures
+
+### Deployment Rate Limiting (Code 10429)
+
+**Symptoms:**
+- `wrangler deploy` fails with "Rate limited" (code 10429)
+- Multiple parallel deployments hit Cloudflare API limits
+- "Max auth failures reached" (code 9109) from rapid retry
+
+**Resolution:**
+```bash
+# Deploy sequentially with delays, not in parallel
+for app in uplink-core uplink-edge uplink-ops uplink-browser; do
+  echo "Deploying $app..."
+  sleep 10
+  cd "apps/$app" && npx wrangler deploy && cd ../..
+done
+```
+
+**Prevention:**
+- Use sequential deploys in CI/CD (not parallel)
+- Add `sleep 10` between worker deployments
+- Use `wrangler deploy --keep-vars` to preserve existing secrets
+
+---
 
 ### Complete System Outage
 

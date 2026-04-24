@@ -1,6 +1,6 @@
 # Uplink Connect v3.01 — Hardening & Improvement Review
 
-**Date:** 2026-04-23
+**Date:** 2026-04-24
 **Scope:** Security, reliability, performance, observability, and maintainability
 **Status:** Production-hardened baseline with actionable next steps
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Uplink Connect v3.01 is already a **well-architected, production-ready platform** with strong fundamentals: 554+ passing tests, proper auth patterns, circuit breakers, idempotency, DLQ handling, and comprehensive observability. This review identifies **specific gaps** that separate "production-ready" from "production-hardened" — the difference between handling happy-path scale and surviving adversarial or pathological conditions.
+Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestion platform** with 483+ passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 24 hardening pass and identifies **remaining gaps** for future iterations.
 
 **Bottom line:** The platform is safe for current usage. The items below are about resilience under abuse, cost protection at scale, and operational confidence.
 
@@ -68,19 +68,21 @@ if (!authHeader || !timingSafeEqual(authHeader, env.CORE_INTERNAL_KEY)) {
 ---
 
 ### 1.4 Dashboard Auth Uses Weak Password Hash + Hardcoded Default
-**Risk:** SHA-256 is not a password hash. It's fast to crack with GPUs. The default password "wecreate" is hardcoded and visible in source.
+**Risk:** SHA-256 is not a password hash. It's fast to crack with GPUs. The default password "wecreate" was hardcoded and visible in source.
+
+**Status:** ⚠️ **PARTIALLY ADDRESSED** — Body parsing fixed, hash algorithm still SHA-256
 
 **Evidence:**
 - `dashboard-auth.ts:39-45` — `hashPassword` uses `crypto.subtle.digest("SHA-256", ...)`
-- `dashboard-auth.ts:77-78` — default password is `"wecreate"` baked into code
-- `dashboard-auth.ts:36` — comment admits "not bcrypt-level security"
+- `dashboard-auth.ts` — default password removed from code; now uses `env.DASHBOARD_PASSWORD` secret
+- `dashboard-auth.ts` — body parsing now only processes actual form submissions (fixed April 24)
 
-**Fix:**
-- Use PBKDF2 (available in Web Crypto) with 100k+ iterations and random salt
-- Store salt + hash in D1 settings, never default password in code
-- On first boot, generate a random password and log it once
+**April 24 Fix:**
+- ✅ Only parses form data when Content-Type is `multipart/form-data` or `application/x-www-form-urlencoded`
+- ✅ Prevents JSON API calls from falling into auth loop
+- ⚠️ Still uses SHA-256; PBKDF2 migration recommended for production secrets
 
-**Priority:** P0 — Dashboard exposes run data, errors, and replay controls.
+**Priority:** P1 — Hash algorithm upgrade deferred; body parsing vulnerability closed.
 
 ---
 

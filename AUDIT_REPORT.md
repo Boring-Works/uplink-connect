@@ -1,6 +1,6 @@
 # Uplink Connect v3.01 - Comprehensive Audit Report
 
-**Date:** 2026-04-23
+**Date:** 2026-04-24
 **Version:** 0.1.2
 **Auditor:** Claude Code
 
@@ -13,7 +13,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 ### Audit Results: ✅ PASSED
 
 - **Type Safety:** All 7 workspace packages pass TypeScript strict mode
-- **Test Coverage:** 652 tests passing across all suites
+- **Test Coverage:** 483 tests passing across all suites (core 292 + contracts 121 + normalizers 37 + source-adapters 33)
 - **Architecture Alignment:** 98%+ match with external v3.01 plan
 - **Code Quality:** Consistent patterns, proper error handling, comprehensive logging
 - **Live Deployment:** All workers deployed and healthy
@@ -207,8 +207,13 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | 0007_settings_audit.sql | platform_settings, audit_log | ✅ |
 | 0008_add_missing_columns.sql | Schema fixes (deleted_at, etc.) | ✅ |
 | 0009_notification_deliveries.sql | notification_deliveries | ✅ |
+| 0010_source_schedules.sql | source_schedules | ✅ |
+| 0011_error_dedup_hash.sql | error_hash column for deduplication | ✅ |
+| 0012_ai_sdk_v6_migration.sql | AI SDK v6 compatibility | ✅ |
+| 0013_dashboard_indexes.sql | Performance indexes | ✅ |
+| 0014_generated_columns.sql | Expression indexes on metadata | ✅ |
 
-**Total: 16 tables**
+**Total: 18 tables, 14 migrations**
 
 ### 5.2 Schema Quality
 
@@ -355,7 +360,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 ### 9.4 Pre-deployment Checklist
 
 - [x] All type checks pass
-- [x] All tests pass (652)
+- [x] All tests pass (483)
 - [x] Live tests pass against production
 - [x] All workers deployed
 - [x] D1 database created and migrations applied
@@ -380,7 +385,11 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | `CollectionWorkflow` fetch binding | P0 - Workflow failure | Wrapped fetch in arrow function |
 | `fastStableHash` too short | P0 - Schema validation failure | Added length padding to meet >=16 chars |
 | Malformed `wrangler.jsonc` | P1 - Cron/trigger misconfiguration | Fixed JSON structure |
-| Hard-coded scheduled triggers | P1 - Unexpected costs/inflexibility | Removed; manual trigger until scheduler UI |
+| Hard-coded scheduled triggers | P1 - Unexpected costs/inflexibility | Removed; dynamic D1-driven scheduler live |
+| Dashboard auth body parsing | P0 - 401 loop on JSON POSTs | Only parse form data for actual form submissions |
+| DLQ infinite retry loop | P0 - Message never acked on DLQ failure | Wrapped sendToDlq() in try/catch |
+| Ops proxy missing auth check | P1 - Unauthenticated core proxying | Added CORE_INTERNAL_KEY check, fails closed |
+| Smoke test stale URLs | P1 - Tests failing on wrong domain | Updated to codyboring.workers.dev |
 
 ### 10.2 Minor Gaps (Non-blocking)
 
