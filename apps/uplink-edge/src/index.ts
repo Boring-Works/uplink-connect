@@ -18,6 +18,35 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 
+// In-memory rate limiter (per-IP sliding window)
+// NOTE: This only protects within a single Worker instance.
+// For production, use Cloudflare Rate Limiting rules or WAF.
+interface RateLimitEntry {
+	count: number;
+	windowStart: number;
+}
+const rateLimitStore = new Map<string, RateLimitEntry>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 100;
+
+function checkRateLimit(clientIP: string): { allowed: boolean; retryAfter?: number } {
+	const now = Date.now();
+	const entry = rateLimitStore.get(clientIP);
+
+	if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+		rateLimitStore.set(clientIP, { count: 1, windowStart: now });
+		return { allowed: true };
+	}
+
+	if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+		const retryAfter = Math.ceil((RATE_LIMIT_WINDOW_MS - (now - entry.windowStart)) / 1000);
+		return { allowed: false, retryAfter };
+	}
+
+	entry.count++;
+	return { allowed: true };
+}
+
 app.get("/health", async (c) => {
 	const checks: Array<{ name: string; status: "healthy" | "degraded" | "unhealthy"; error?: string }> = [];
 
@@ -67,6 +96,12 @@ app.get("/health", async (c) => {
 });
 
 app.post("/v1/intake", async (c) => {
+	const clientIP = c.req.header("cf-connecting-ip") ?? "unknown";
+	const limit = checkRateLimit(clientIP);
+	if (!limit.allowed) {
+		return c.json({ error: "Rate limit exceeded" }, 429, { "Retry-After": String(limit.retryAfter) });
+	}
+
 	if (!c.env.INGEST_API_KEY) {
 		return c.json({ error: "INGEST_API_KEY not configured" }, 500);
 	}
@@ -122,6 +157,12 @@ app.post("/v1/intake", async (c) => {
 });
 
 app.post("/v1/webhooks/:sourceId", async (c) => {
+	const clientIP = c.req.header("cf-connecting-ip") ?? "unknown";
+	const limit = checkRateLimit(clientIP);
+	if (!limit.allowed) {
+		return c.json({ error: "Rate limit exceeded" }, 429, { "Retry-After": String(limit.retryAfter) });
+	}
+
 	if (!c.env.INGEST_API_KEY) {
 		return c.json({ error: "INGEST_API_KEY not configured" }, 500);
 	}
@@ -239,6 +280,12 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 });
 
 app.post("/v1/files/:sourceId", async (c) => {
+	const clientIP = c.req.header("cf-connecting-ip") ?? "unknown";
+	const limit = checkRateLimit(clientIP);
+	if (!limit.allowed) {
+		return c.json({ error: "Rate limit exceeded" }, 429, { "Retry-After": String(limit.retryAfter) });
+	}
+
 	if (!c.env.INGEST_API_KEY) {
 		return c.json({ error: "INGEST_API_KEY not configured" }, 500);
 	}
@@ -358,6 +405,12 @@ app.post("/v1/files/:sourceId", async (c) => {
 });
 
 app.post("/v1/sources/:sourceId/trigger", async (c) => {
+	const clientIP = c.req.header("cf-connecting-ip") ?? "unknown";
+	const limit = checkRateLimit(clientIP);
+	if (!limit.allowed) {
+		return c.json({ error: "Rate limit exceeded" }, 429, { "Retry-After": String(limit.retryAfter) });
+	}
+
 	if (!c.env.INGEST_API_KEY) {
 		return c.json({ error: "INGEST_API_KEY not configured" }, 500);
 	}
