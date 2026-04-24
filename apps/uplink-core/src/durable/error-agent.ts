@@ -366,9 +366,7 @@ export class ErrorAgentDO extends DurableObject<Env> {
 		if (!this.workersAi) {
 			this.workersAi = createWorkersAI({
 				binding: this.env.AI,
-				...(this.env.AI_GATEWAY
-					? { gateway: { id: AI_GATEWAY_ID } }
-					: {}),
+				gateway: { id: AI_GATEWAY_ID },
 			});
 		}
 		return this.workersAi;

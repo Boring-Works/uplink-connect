@@ -105,10 +105,6 @@
 	"ai": {
 		"binding": "AI"
 	},
-	"ai_gateway": {
-		"binding": "AI_GATEWAY",
-		"gateway_id": "uplink-ai-gateway"
-	},
 	"kv_namespaces": [
 		{
 			"binding": "ALERT_CACHE",
