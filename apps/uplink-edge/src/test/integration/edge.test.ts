@@ -11,6 +11,10 @@ describe("uplink-edge integration", () => {
 		UPLINK_CORE: {
 			fetch: vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
 		} as unknown as Fetcher,
+		RAW_BUCKET: {
+			put: async () => undefined,
+			head: async () => null,
+		} as unknown as R2Bucket,
 	});
 
 	describe("GET /health", () => {

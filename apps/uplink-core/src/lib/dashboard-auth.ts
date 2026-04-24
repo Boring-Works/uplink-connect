@@ -47,13 +47,13 @@ export async function hashPassword(password: string): Promise<string> {
 
 /**
  * Get the configured dashboard password hash from settings or env.
- * If neither is set, generates and returns a default password hash.
+ * Returns null if no password is configured.
  */
-export async function getDashboardPasswordHash(env: Env): Promise<{ hash: string; isDefault: boolean; defaultPassword?: string }> {
+export async function getDashboardPasswordHash(env: Env): Promise<{ hash: string } | null> {
 	// First check env var override
 	if (env.DASHBOARD_PASSWORD) {
 		const hash = await hashPassword(env.DASHBOARD_PASSWORD);
-		return { hash, isDefault: false };
+		return { hash };
 	}
 
 	// Then check platform settings
@@ -67,17 +67,14 @@ export async function getDashboardPasswordHash(env: Env): Promise<{ hash: string
 		if (stored?.settings_json) {
 			const parsed = JSON.parse(stored.settings_json);
 			if (parsed.security?.dashboardPasswordHash) {
-				return { hash: parsed.security.dashboardPasswordHash, isDefault: false };
+				return { hash: parsed.security.dashboardPasswordHash };
 			}
 		}
 	} catch {
 		// fall through
 	}
 
-	// Use fixed default password
-	const defaultPassword = "wecreate";
-	const hash = await hashPassword(defaultPassword);
-	return { hash, isDefault: true, defaultPassword };
+	return null;
 }
 
 /**
@@ -89,7 +86,62 @@ export async function ensureDashboardAuth(
 	env: Env,
 	options: { pageTitle: string; returnPath: string },
 ): Promise<Response | null> {
-	const { hash, isDefault, defaultPassword } = await getDashboardPasswordHash(env);
+	const passwordConfig = await getDashboardPasswordHash(env);
+
+	if (!passwordConfig) {
+		// No password configured — show setup gate
+		const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${escapeHtml(options.pageTitle)}</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: system-ui, sans-serif;
+			background: #FAFAF8;
+			color: #1C1C1C;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+			padding: 24px;
+		}
+		.gate {
+			background: #F0EEEA;
+			border: 1px solid #D5D0C9;
+			border-radius: 14px;
+			padding: 36px;
+			max-width: 400px;
+			width: 100%;
+		}
+		.gate h1 { font-size: 1.5rem; margin-bottom: 8px; }
+		.gate p { color: #3D3D3D; margin-bottom: 12px; }
+		.gate code {
+			background: #E8E5DF;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-family: monospace;
+		}
+	</style>
+</head>
+<body>
+	<div class="gate">
+		<h1>Dashboard Not Configured</h1>
+		<p>No dashboard password is set.</p>
+		<p>Set the <code>DASHBOARD_PASSWORD</code> secret via Wrangler:</p>
+		<code>wrangler secret put DASHBOARD_PASSWORD</code>
+	</div>
+</body>
+</html>`;
+		return new Response(html, {
+			status: 503,
+			headers: { "content-type": "text/html; charset=utf-8" },
+		});
+	}
+
+	const { hash } = passwordConfig;
 
 	const cookieHeader = request.headers.get("cookie") ?? "";
 	const cookies = parseCookies(cookieHeader);
@@ -128,12 +180,7 @@ export async function ensureDashboardAuth(
 	}
 
 	// Return password gate HTML
-	const defaultHint = isDefault
-		? `<div style="margin-top: 16px; padding: 12px; background: rgba(200,122,66,0.1); border-radius: 8px; color: var(--graphite); font-size: 0.9rem;">
-			<strong>Default password:</strong> <code style="background: var(--sawdust); padding: 2px 6px; border-radius: 4px; font-family: 'IBM Plex Mono', monospace;">${defaultPassword}</code>
-			<div style="margin-top: 6px; font-size: 0.8rem;">Change this in Settings after logging in.</div>
-		</div>`
-		: "";
+	const defaultHint = "";
 
 	const html = `<!DOCTYPE html>
 <html lang="en">
@@ -225,7 +272,6 @@ export async function ensureDashboardAuth(
 			<input type="password" name="password" placeholder="Password" autofocus required>
 			<button type="submit">Unlock</button>
 		</form>
-		${defaultHint}
 	</div>
 </body>
 </html>`;

@@ -34,6 +34,7 @@ const AI_GATEWAY_ID = "uplink-ai-gateway";
 interface ClientState {
 	rateLimit: ClientRateLimit;
 	abortController: AbortController;
+	currentAbortController?: AbortController;
 }
 
 interface ClientRateLimit {
@@ -205,6 +206,7 @@ export class ErrorAgentDO extends DurableObject<Env> {
 		const state = this.clientStates.get(ws);
 		if (state) {
 			state.abortController.abort();
+			state.currentAbortController?.abort();
 		}
 	}
 
@@ -295,7 +297,13 @@ export class ErrorAgentDO extends DurableObject<Env> {
 		// AI SDK v6 + workers-ai-provider with optional AI Gateway
 		const workersAi = this.getWorkersAI();
 		const clientState = this.clientStates.get(ws);
-		const abortSignal = clientState?.abortController.signal;
+
+		// Create a fresh AbortController per chat to avoid reusing an already-aborted signal
+		const chatAbortController = new AbortController();
+		if (clientState) {
+			clientState.currentAbortController = chatAbortController;
+		}
+		const abortSignal = chatAbortController.signal;
 
 		const result = streamText({
 			model: workersAi("@cf/meta/llama-3.3-70b-instruct-fp8-fast"),

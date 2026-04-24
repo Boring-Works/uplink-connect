@@ -159,7 +159,8 @@ describe("uplink-edge additional", () => {
 			const res = await app.fetch(
 				new Request("http://localhost/v1/sources/src-1/trigger", {
 					method: "POST",
-					headers: { authorization: "Bearer test-api-key" },
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({}),
 				}),
 				env,
 			);
@@ -174,7 +175,8 @@ describe("uplink-edge additional", () => {
 			const res = await app.fetch(
 				new Request("http://localhost/v1/sources/src-1/trigger", {
 					method: "POST",
-					headers: { authorization: "Bearer test-api-key" },
+					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({}),
 				}),
 				env,
 			);

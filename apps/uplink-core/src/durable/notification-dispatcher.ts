@@ -61,7 +61,7 @@ export class NotificationDispatcher extends DurableObject<Env> {
 			for (const route of routes) {
 				if (!route.enabled) continue;
 
-				// KV deduplication check
+				// KV deduplication check (read-only — write after successful dispatch)
 				if (this.env.ALERT_CACHE) {
 					try {
 						const dedupKey = getAlertDedupKey(alert, route);
@@ -70,10 +70,8 @@ export class NotificationDispatcher extends DurableObject<Env> {
 							deduplicatedRoutes.push(route);
 							continue;
 						}
-						// Mark as sent with 1-hour TTL
-						await this.env.ALERT_CACHE.put(dedupKey, "1", { expirationTtl: 3600 });
 					} catch (err) {
-						// If KV fails, proceed with dispatch rather than dropping the alert
+						// If KV read fails, proceed with dispatch rather than dropping the alert
 						console.warn("[NotificationDispatcher] KV dedup check failed, proceeding:", err);
 					}
 				}
@@ -115,6 +113,20 @@ export class NotificationDispatcher extends DurableObject<Env> {
 
 			// Dispatch non-throttled notifications immediately
 			const result = await dispatchNotifications(providers, activeRoutes, alert, sourceName);
+
+			// Write KV dedup keys only for successfully sent routes
+			if (this.env.ALERT_CACHE) {
+				for (const delivery of result.deliveries) {
+					if (delivery.sent) {
+						try {
+							const dedupKey = getAlertDedupKey(alert, activeRoutes.find((r) => r.providerId === delivery.providerId)!);
+							await this.env.ALERT_CACHE.put(dedupKey, "1", { expirationTtl: 3600 });
+						} catch (err) {
+							console.warn("[NotificationDispatcher] KV dedup write failed:", err);
+						}
+					}
+				}
+			}
 
 			// Queue throttled notifications for retry
 			for (const route of throttledRoutes) {

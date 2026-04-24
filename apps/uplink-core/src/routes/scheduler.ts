@@ -760,7 +760,7 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 				const lastRunText = lastRun ? formatDuration(Math.floor(Date.now() / 1000) - lastRun) : '<span style="color:#9A9A9A">Never</span>';
 				const nextRuns = getNextRuns(sch.cronExpression, 1);
 				const nextRunText = nextRuns.length > 0
-					? formatDuration(Math.floor((nextRuns[0].getTime() - Date.now()) / 1000)).replace('ago', '') + '
+					? formatDuration(Math.floor((nextRuns[0].getTime() - Date.now()) / 1000)).replace('ago', 'remaining')
 					: '<span style="color:#9A9A9A">—</span>';
 				return '<tr data-index="' + idx + '">' +
 					'<td><input type="checkbox" class="checkbox row-checkbox" data-id="' + sch.scheduleId + '" data-index="' + idx + '"></td>' +

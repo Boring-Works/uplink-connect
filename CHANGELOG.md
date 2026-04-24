@@ -46,7 +46,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E Test Fix** - Health endpoint test now handles degraded test environment gracefully
 - **Wrangler Config** - Removed invalid `ai_gateway` top-level binding; AI Gateway now configured via `workers-ai-provider` `gateway` option
 - **D1 Migrations** - Manually recorded already-applied `0012` and fixed `0014` for D1 compatibility
-- **Test Count**: 554 → 652 passing across all suites
+- **uplink-edge Security Hardening**
+  - Webhook endpoint now requires API key authentication (was unprotected)
+  - File upload sanitizes `file.name` to prevent path traversal in R2 keys
+  - Added file count limit (10) and file size limit (50MB)
+  - Added request body size limit (10MB) on `/v1/intake`
+  - All `INGEST_QUEUE.send()` calls wrapped with try/catch
+  - All `RAW_BUCKET.put()` calls wrapped with try/catch
+  - `CORE_INTERNAL_KEY` now fails closed (returns 500 if missing)
+  - Trigger endpoint requires valid JSON body (returns 400 for malformed)
+  - `sourceId` URL-encoded in internal service fetch calls
+  - R2 health check reports `degraded` when binding missing
+
+- **uplink-core Security & Reliability Fixes**
+  - Removed hardcoded dashboard password `"wecreate"` — now requires `DASHBOARD_PASSWORD` secret
+  - `writeMetric()` wrapped in try/catch so Analytics Engine errors don't crash queue processing
+  - Fixed KV dedup bug in `NotificationDispatcher` — write happens after successful dispatch, not before
+  - Fixed `ErrorAgentDO` AbortController reuse — fresh controller per chat message
+  - Fixed over-aggressive error deduplication (`cleanErrorMessage` no longer replaces all numbers)
+  - `permanentlyDeleteSource` now cleans up `source_schedules`, `source_metrics_5min`, `source_metrics_daily`, `source_auth_refs`
+  - Fixed scheduler HTML `nextRunText` string literal
+
+- **Test Count**: 652 passing across all suites
 
 ### Dependencies
 

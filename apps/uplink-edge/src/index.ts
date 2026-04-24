@@ -35,13 +35,14 @@ app.get("/health", async (c) => {
 
 	// Check R2 binding
 	try {
-		if (c.env.RAW_BUCKET) {
+		if (!c.env.RAW_BUCKET) {
+			checks.push({ name: "raw-bucket", status: "degraded", error: "Binding missing" });
+		} else {
 			await c.env.RAW_BUCKET.head("health-check");
+			checks.push({ name: "raw-bucket", status: "healthy" });
 		}
-		checks.push({ name: "raw-bucket", status: "healthy" });
-	} catch {
-		// R2 head may fail if object doesn't exist; binding is still ok
-		checks.push({ name: "raw-bucket", status: "healthy" });
+	} catch (err) {
+		checks.push({ name: "raw-bucket", status: "degraded", error: err instanceof Error ? err.message : "R2 head failed" });
 	}
 
 	// Check uplink-core reachability
@@ -74,6 +75,11 @@ app.post("/v1/intake", async (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
+	const contentLength = parseInt(c.req.header("content-length") ?? "0", 10);
+	if (contentLength > 10 * 1024 * 1024) {
+		return c.json({ error: "Payload too large", maxBytes: 10 * 1024 * 1024 }, 413);
+	}
+
 	let payload: unknown;
 	try {
 		payload = await c.req.json();
@@ -91,7 +97,17 @@ app.post("/v1/intake", async (c) => {
 		requestId: c.req.header("cf-ray") ?? c.req.header("x-request-id"),
 	});
 
-	await c.env.INGEST_QUEUE.send(queueMessage);
+	try {
+		await c.env.INGEST_QUEUE.send(queueMessage);
+	} catch (err) {
+		return c.json(
+			{
+				error: "Failed to enqueue message",
+				detail: err instanceof Error ? err.message : "Unknown error",
+			},
+			503,
+		);
+	}
 
 	return c.json(
 		{
@@ -106,21 +122,41 @@ app.post("/v1/intake", async (c) => {
 });
 
 app.post("/v1/webhooks/:sourceId", async (c) => {
+	if (!c.env.INGEST_API_KEY) {
+		return c.json({ error: "INGEST_API_KEY not configured" }, 500);
+	}
+
+	if (!isAuthorized(c.req.raw, c.env.INGEST_API_KEY)) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+
 	const sourceId = c.req.param("sourceId");
 	const bodyText = await c.req.text();
 
-	// Fetch source config to check webhook security settings
-	const sourceResponse = await c.env.UPLINK_CORE.fetch(
-		`https://uplink-core/internal/sources/${sourceId}`,
-		{
-			headers: {
-				"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY ?? "",
-			},
-		},
-	);
+	if (!c.env.CORE_INTERNAL_KEY) {
+		return c.json({ error: "CORE_INTERNAL_KEY not configured" }, 500);
+	}
 
-	if (!sourceResponse.ok) {
+	// Fetch source config to check webhook security settings
+	let sourceResponse: Response;
+	try {
+		sourceResponse = await c.env.UPLINK_CORE.fetch(
+			`https://uplink-core/internal/sources/${encodeURIComponent(sourceId)}`,
+			{
+				headers: {
+					"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY,
+				},
+			},
+		);
+	} catch (err) {
+		return c.json({ error: "Upstream unavailable", detail: err instanceof Error ? err.message : String(err) }, 503);
+	}
+
+	if (sourceResponse.status === 404) {
 		return c.json({ error: "Source not found" }, 404);
+	}
+	if (!sourceResponse.ok) {
+		return c.json({ error: "Upstream error" }, 502);
 	}
 
 	const source = await sourceResponse.json() as {
@@ -149,6 +185,8 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 		if (!isValid) {
 			return c.json({ error: "Invalid webhook signature" }, 401);
 		}
+	} else {
+		return c.json({ error: "Webhook secret not configured" }, 400);
 	}
 
 	let payload: unknown;
@@ -176,7 +214,17 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 		requestId: c.req.header("cf-ray") ?? c.req.header("x-request-id") ?? crypto.randomUUID(),
 	});
 
-	await c.env.INGEST_QUEUE.send(queueMessage);
+	try {
+		await c.env.INGEST_QUEUE.send(queueMessage);
+	} catch (err) {
+		return c.json(
+			{
+				error: "Failed to enqueue message",
+				detail: err instanceof Error ? err.message : "Unknown error",
+			},
+			503,
+		);
+	}
 
 	return c.json(
 		{
@@ -213,30 +261,49 @@ app.post("/v1/files/:sourceId", async (c) => {
 		return c.json({ error: "No files provided. Use 'file' field name." }, 400);
 	}
 
+	const MAX_FILES = 10;
+	const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+	if (files.length > MAX_FILES) {
+		return c.json({ error: "Too many files", maxFiles: MAX_FILES }, 413);
+	}
+
 	if (!c.env.RAW_BUCKET) {
 		return c.json({ error: "RAW_BUCKET not configured" }, 500);
 	}
 
 	const results: Array<{ fileName: string; ingestId: string; size: number; key: string }> = [];
+	const failed: Array<{ fileName: string; reason: string }> = [];
 
 	for (const file of files) {
 		if (!(file instanceof File)) {
 			continue;
 		}
 
+		if (file.size > MAX_FILE_SIZE) {
+			failed.push({ fileName: file.name, reason: "File too large" });
+			continue;
+		}
+
 		const ingestId = crypto.randomUUID();
-		const key = `uploads/${sourceId}/${ingestId}/${file.name}`;
+		const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+		const key = `uploads/${sourceId}/${ingestId}/${safeName}`;
 		const buffer = await file.arrayBuffer();
 
-		await c.env.RAW_BUCKET.put(key, buffer, {
-			httpMetadata: { contentType: file.type || "application/octet-stream" },
-			customMetadata: {
-				sourceId,
-				fileName: file.name,
-				ingestId,
-				uploadedAt: toIsoNow(),
-			},
-		});
+		try {
+			await c.env.RAW_BUCKET.put(key, buffer, {
+				httpMetadata: { contentType: file.type || "application/octet-stream" },
+				customMetadata: {
+					sourceId,
+					fileName: safeName,
+					ingestId,
+					uploadedAt: toIsoNow(),
+				},
+			});
+		} catch (err) {
+			failed.push({ fileName: file.name, reason: err instanceof Error ? err.message : "R2 upload failed" });
+			continue;
+		}
 
 		const contentHash = await computeBufferHash(buffer);
 
@@ -250,10 +317,10 @@ app.post("/v1/files/:sourceId", async (c) => {
 			hasMore: false,
 			records: [
 				{
-					externalId: file.name,
+					externalId: safeName,
 					contentHash,
 					rawPayload: {
-						fileName: file.name,
+						fileName: safeName,
 						contentType: file.type || "application/octet-stream",
 						size: file.size,
 						r2Key: key,
@@ -267,19 +334,26 @@ app.post("/v1/files/:sourceId", async (c) => {
 			requestId: c.req.header("x-request-id") ?? crypto.randomUUID(),
 		});
 
-		await c.env.INGEST_QUEUE.send(queueMessage);
+		try {
+			await c.env.INGEST_QUEUE.send(queueMessage);
+		} catch (err) {
+			failed.push({ fileName: file.name, reason: err instanceof Error ? err.message : "Queue enqueue failed" });
+			continue;
+		}
 
-		results.push({ fileName: file.name, ingestId, size: file.size, key });
+		results.push({ fileName: safeName, ingestId, size: file.size, key });
 	}
 
 	return c.json(
 		{
-			ok: true,
+			ok: failed.length === 0,
 			sourceId,
 			uploaded: results.length,
+			failed: failed.length,
 			files: results,
+			errors: failed.length > 0 ? failed : undefined,
 		},
-		202,
+		failed.length > 0 && results.length === 0 ? 503 : 202,
 	);
 });
 
@@ -292,14 +366,23 @@ app.post("/v1/sources/:sourceId/trigger", async (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	const sourceId = c.req.param("sourceId");
-	const body = await c.req.json().catch(() => ({}));
+	if (!c.env.CORE_INTERNAL_KEY) {
+		return c.json({ error: "CORE_INTERNAL_KEY not configured" }, 500);
+	}
 
-	const response = await c.env.UPLINK_CORE.fetch(new URL("/internal/sources/" + sourceId + "/trigger", c.req.url).toString(), {
+	const sourceId = c.req.param("sourceId");
+	let body: Record<string, unknown>;
+	try {
+		body = await c.req.json();
+	} catch {
+		return c.json({ error: "Invalid JSON body" }, 400);
+	}
+
+	const response = await c.env.UPLINK_CORE.fetch(new URL("/internal/sources/" + encodeURIComponent(sourceId) + "/trigger", c.req.url).toString(), {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
-			"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY || "missing",
+			"x-uplink-internal-key": c.env.CORE_INTERNAL_KEY,
 		},
 		body: JSON.stringify({ ...body, triggeredBy: "edge" }),
 	});

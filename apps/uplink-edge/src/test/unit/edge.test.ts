@@ -321,6 +321,7 @@ describe("uplink-edge unit", () => {
 				new Request("http://localhost/v1/sources/src-1/trigger", {
 					method: "POST",
 					headers: { authorization: "Bearer test-api-key", "content-type": "application/json" },
+					body: JSON.stringify({}),
 				}),
 				env,
 			);

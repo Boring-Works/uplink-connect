@@ -63,9 +63,9 @@ describe("metrics", () => {
 			expect(writtenDataPoints[0].indexes[0]).toBe("default");
 		});
 
-		it("throws when OPS_METRICS is missing", () => {
+		it("silently drops metric when OPS_METRICS is missing", () => {
 			const envWithoutMetrics = {} as Env;
-			expect(() => writeMetric(envWithoutMetrics, { sourceId: "src-1", sourceType: "api", event: "test.event" })).toThrow();
+			expect(() => writeMetric(envWithoutMetrics, { sourceId: "src-1", sourceType: "api", event: "test.event" })).not.toThrow();
 		});
 	});
 
@@ -147,9 +147,9 @@ describe("metrics", () => {
 			expect(writtenDataPoints[2].doubles).toEqual([2]);
 		});
 
-		it("throws when OPS_METRICS is missing", () => {
+		it("silently drops metric when OPS_METRICS is missing", () => {
 			const envWithoutMetrics = {} as Env;
-			expect(() => writeQueueMetrics(envWithoutMetrics, { queueLagSeconds: 0, pendingCount: 0, processingCount: 0 })).toThrow();
+			expect(() => writeQueueMetrics(envWithoutMetrics, { queueLagSeconds: 0, pendingCount: 0, processingCount: 0 })).not.toThrow();
 		});
 	});
 

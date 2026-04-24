@@ -430,6 +430,10 @@ export async function permanentlyDeleteSource(db: D1Database, sourceId: string):
 
 	// Delete in dependency order — batched for atomicity
 	const statements = [
+		db.prepare("DELETE FROM source_auth_refs WHERE source_id = ?").bind(sourceId),
+		db.prepare("DELETE FROM source_schedules WHERE source_id = ?").bind(sourceId),
+		db.prepare("DELETE FROM source_metrics_5min WHERE source_id = ?").bind(sourceId),
+		db.prepare("DELETE FROM source_metrics_daily WHERE source_id = ?").bind(sourceId),
 		db.prepare("DELETE FROM source_capabilities WHERE source_id = ?").bind(sourceId),
 		db.prepare("DELETE FROM source_policies WHERE source_id = ?").bind(sourceId),
 		db.prepare("DELETE FROM source_runtime_snapshots WHERE source_id = ?").bind(sourceId),
@@ -592,7 +596,8 @@ function cleanErrorMessage(message: string): string {
 		.replace(/:\d{4,5}\b/g, ":<PORT>")
 		.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<UUID>")
 		.replace(/\b0x[0-9a-f]+\b/gi, "<HEX>")
-		.replace(/\d+/g, "<N>");
+		.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, "<IP>")
+		.replace(/\b[a-f0-9]{16,}\b/gi, "<HASH>");
 }
 
 async function hashError(params: {

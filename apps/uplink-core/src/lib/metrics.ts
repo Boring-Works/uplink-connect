@@ -100,19 +100,23 @@ export function writeMetric(
 		metadata?: Record<string, string | number>;
 	},
 ): void {
-	const doubles: number[] = [params.value ?? 1];
-	const blobs: (string | null)[] = [
-		params.sourceId,
-		params.sourceType,
-		params.event,
-		params.metadata ? JSON.stringify(params.metadata) : null,
-	];
+	try {
+		const doubles: number[] = [params.value ?? 1];
+		const blobs: (string | null)[] = [
+			params.sourceId,
+			params.sourceType,
+			params.event,
+			params.metadata ? JSON.stringify(params.metadata) : null,
+		];
 
-	env.OPS_METRICS.writeDataPoint({
-		blobs,
-		doubles,
-		indexes: [params.index ?? "default"],
-	});
+		env.OPS_METRICS?.writeDataPoint({
+			blobs,
+			doubles,
+			indexes: [params.index ?? "default"],
+		});
+	} catch {
+		// Silently drop metrics — don't break business logic
+	}
 }
 
 export function writeIngestMetrics(
