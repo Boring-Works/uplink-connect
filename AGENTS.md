@@ -16,7 +16,7 @@ Uplink Connect is a **Cloudflare-native data ingestion platform** built for reli
 
 ### Stack
 - **Tier:** Boring Stack Tier 3 (Cloudflare Workers bare)
-- **Language:** TypeScript 5.8+ (strict mode)
+- **Language:** TypeScript 5.9+ (strict mode)
 - **Package Manager:** pnpm 10.6+
 - **Runtime:** Cloudflare Workers
 
@@ -122,7 +122,7 @@ pnpm dev:ops       # Terminal 4
 - `packages/normalizers/src/index.ts` - Entity normalization and code chunking
 
 ### Database
-- `apps/uplink-core/migrations/*.sql` - 10 migration files
+- `apps/uplink-core/migrations/*.sql` - 14 migration files
 
 ---
 

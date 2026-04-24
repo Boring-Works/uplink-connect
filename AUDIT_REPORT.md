@@ -469,7 +469,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 
 **APPROVED FOR PRODUCTION USE WITH MANUAL TRIGGERING**
 
-Uplink Connect v3.01 (v0.1.1) is ready for production use with manual or API-driven triggers. The implementation:
+Uplink Connect v3.01 (v0.1.2) is ready for production use with manual or API-driven triggers. The implementation:
 
 1. ✅ Follows Cloudflare's 2026 platform guidance
 2. ✅ Implements all critical features from the architecture plan

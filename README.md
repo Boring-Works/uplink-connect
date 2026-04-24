@@ -3,7 +3,7 @@
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
 [![Tests](https://img.shields.io/badge/tests-652%2B%20passing-success)](./apps/uplink-core/src/test)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 

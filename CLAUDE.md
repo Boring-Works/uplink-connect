@@ -2,14 +2,14 @@
 
 ## What This Is
 
-Cloudflare-native data collection and ingestion platform (v0.1.1).
+Cloudflare-native data collection and ingestion platform (v0.1.2).
 
 A production-ready, multi-tenant data ingestion system built entirely on Cloudflare's edge infrastructure. Handles everything from simple webhook intake to complex browser-based collection workflows, with durable execution guarantees and comprehensive observability.
 
 ## Stack
 
 - **Tier 3** (CF Workers bare)
-- TypeScript 5.8+ with strict mode
+- TypeScript 5.9+ with strict mode
 - pnpm 10.6+ workspaces
 - Cloudflare Workers + Durable Objects + Workflows + Queues + D1 + R2 + Analytics Engine + Vectorize + Workers AI
 
@@ -37,7 +37,7 @@ uplink-ops       → Protected operations API
 
 ## Current State
 
-**Status: Production Ready (v0.1.1)**
+**Status: Production Ready (v0.1.2)**
 
 ### Completed Features
 
@@ -109,7 +109,7 @@ UplinkConnect/
 │   │   │   │   └── error-agent.ts           # DO for RAG error diagnosis
 │   │   │   ├── routes/               # 15 route modules
 │   │   │   └── test/                 # 652+ tests (unit, integration, e2e, live)
-│   │   ├── migrations/       # 10 SQL migrations
+│   │   ├── migrations/       # 14 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
 │   │   └── package.json      # @uplink/core
 │   ├── uplink-browser/       # Browser collection

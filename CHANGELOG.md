@@ -36,13 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Infrastructure
 
 - **D1 Indexes** - Migration `0013_dashboard_indexes.sql` with 6 composite indexes
-- **Generated Columns** - Migration `0014_generated_columns.sql` with `source_type_generated`
+- **Generated Columns** - Migration `0014_generated_columns.sql` with expression index on `json_extract(metadata_json, '$.sourceType')`
+  - Original `ALTER TABLE ADD GENERATED STORED` failed on D1; replaced with expression index achieving same query performance
 - **Batch Deletes** - `permanentlyDeleteSource` uses atomic `db.batch()`
 
 ### Testing
 
 - **ErrorAgentDO Unit Tests** - New comprehensive test suite covering schema, auth, rate limiting, message persistence, WebSocket protocol, abort behavior, and stream handling
 - **E2E Test Fix** - Health endpoint test now handles degraded test environment gracefully
+- **Wrangler Config** - Removed invalid `ai_gateway` top-level binding; AI Gateway now configured via `workers-ai-provider` `gateway` option
+- **D1 Migrations** - Manually recorded already-applied `0012` and fixed `0014` for D1 compatibility
 - **Test Count**: 554 → 652 passing across all suites
 
 ### Dependencies
