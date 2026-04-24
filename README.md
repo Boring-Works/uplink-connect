@@ -2,7 +2,7 @@
 
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
-[![Tests](https://img.shields.io/badge/tests-652%2B%20passing-success)](./apps/uplink-core/src/test)
+[![Tests](https://img.shields.io/badge/tests-483%2B%20passing-success)](./apps/uplink-core/src/test)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -27,7 +27,8 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Protected operations**: Secure ops API for run management and replay
 - **Universal notifications**: 8 providers including Slack, Discord, PagerDuty, Teams
 - **Code intelligence**: AST-based chunking for TS/JS file ingestion
-- **Live public data source**: USGS earthquakes hourly collection actively running
+- **Live public data sources**: 4 diverse APIs configured (USGS earthquakes, GitHub events, Hacker News, exchange rates)
+- **Production validated**: All endpoints verified, auth hardened, DLQ resilient — see `PRODUCTION_VALIDATION_REPORT.md`
 
 ## Architecture
 
