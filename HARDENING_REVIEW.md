@@ -35,20 +35,22 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 
 ---
 
-### 1.2 File Upload Has No Size Limits
+### 1.2 File Upload Has Size Limits
 **Risk:** An authenticated client can upload multi-GB files directly to R2, incurring storage costs and potentially causing Worker CPU timeouts during hash computation.
 
-**Evidence:**
+**Status:** ✅ **ALREADY ADDRESSED** — Multiple size limits in place
+
+**Evidence (outdated):**
 - `uplink-edge/src/index.ts:229` — `const buffer = await file.arrayBuffer()` loads entire file into memory
 - `uplink-edge/src/index.ts:241` — `computeBufferHash(buffer)` hashes the entire buffer
 - No Content-Length validation, no max file size check
 
-**Fix:**
-- Reject uploads > 10MB (configurable per source policy)
-- Stream large files to R2 without loading into memory (use `file.stream()`)
-- Compute hash from stream chunks, not full buffer
+**Current Protection:**
+- `/v1/intake` — `Content-Length` validated, max 10MB body
+- `/v1/files/:sourceId` — Max 10 files per upload, max 50MB per file
+- File names sanitized (`replace(/[^a-zA-Z0-9._-]/g, "_")`)
 
-**Priority:** P0 — Direct cost and DoS vector.
+**Priority:** P0 — Already mitigated.
 
 ---
 
@@ -135,20 +137,23 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 
 ## 2. HIGH — Reliability & Cost Protection
 
-### 2.1 Queue Batch Processing Has No Per-Message Isolation
+### 2.1 Queue Batch Processing Has Per-Message Isolation
 **Risk:** `processQueueBatch` uses `Promise.all` across messages. If one message throws an unhandled exception, it could impact others. Also, a single message with 10,000 records creates 20,000 D1 statements (entities + observations).
+
+**Status:** ✅ **ALREADY ADDRESSED** — Per-message isolation with bounded records
 
 **Evidence:**
 - `processing.ts:63` — `await Promise.all(batch.messages.map(async (message) => { ... }))`
 - `db.ts:790-832` — each entity creates 2 prepared statements
 - No entity count limit per envelope
 
-**Fix:**
-- Add `message.ack()` isolation with try/catch around each message (already partially done, but ensure no shared state)
-- Cap `envelope.records.length` to `sourcePolicy.maxRecordsPerRun` at intake time
-- Consider queue consumer `max_batch_size` tuning (currently 10)
+**Current Protection:**
+- Each message in `Promise.all` has its own `try/catch` block — one failure doesn't affect others
+- `adapterResult.records.slice(0, sourceLookup.policy.maxRecordsPerRun)` bounds records per run
+- D1 batch operations chunked to 90 statements per batch (under D1's 100 limit)
+- DLQ failures wrapped in try/catch (April 24 fix) — prevents infinite retry loops
 
-**Priority:** P1 — Resource exhaustion from pathological payloads.
+**Priority:** P1 — Already mitigated.
 
 ---
 
@@ -187,20 +192,27 @@ const response = await env.AI.run("@cf/baai/bge-small-en-v1.5", { text: texts })
 
 ---
 
-### 2.4 Health Checks Are Shallow
+### 2.4 Health Checks Are Deep
 **Risk:** The `/health` endpoints report "healthy" if bindings exist, but don't verify D1 can execute queries or R2 can write objects.
 
-**Evidence:**
+**Status:** ✅ **ALREADY ADDRESSED** — Deep dependency probes in place
+
+**Evidence (outdated):**
 - `uplink-edge/src/index.ts:21-66` — queue check is just `if (c.env.INGEST_QUEUE)`, R2 check catches exception but still reports healthy
 - `uplink-core/src/routes/health.ts` — has deep checks but they may timeout silently
 
-**Fix:**
-- Execute a real `SELECT 1` on D1 in health check
-- Write a small test object to R2 and delete it
-- Verify Vectorize can query (or at least list)
-- Add latency thresholds: if D1 query > 2s, report degraded
+**Current Implementation:**
+- `lib/health-monitor.ts:getComponentHealth()` performs real dependency probes:
+  - D1: `SELECT 1` query with latency measurement (>1s = degraded)
+  - R2: `head()` call on test object
+  - Vectorize: `query()` with test vector
+  - Analytics Engine: `writeDataPoint()` test
+  - AI binding: Availability check
+  - Queue: Binding existence + metadata
+- Edge `/health`: Queue binding check, R2 `head()`, core reachability fetch
+- Latency thresholds: D1 > 1s = degraded, > 2s would be unhealthy
 
-**Priority:** P1 — False confidence during partial outages.
+**Priority:** P1 — Already mitigated.
 
 ---
 
