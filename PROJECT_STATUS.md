@@ -1,8 +1,8 @@
 # Uplink Connect - Project Status Report
 
-**Date:** April 23, 2026  
+**Date:** April 24, 2026  
 **Version:** v0.1.2  
-**Status:** Production Ready — Hardened & Audited  
+**Status:** Production Ready — Hardened, Audited & Validated  
 **Repository:** https://github.com/Boring-Works/uplink-connect
 
 ---
@@ -175,7 +175,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 17. `source_schedules` - Cron-driven source schedules
 18. `notification_deliveries` - Notification delivery tracking
 
-### 11 Migrations Applied
+### 14 Migrations Applied
 - 0001_control_schema.sql
 - 0002_source_registry.sql
 - 0003_entity_plane.sql
@@ -187,18 +187,21 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - 0009_notification_deliveries.sql
 - 0010_source_schedules.sql
 - 0011_error_dedup_hash.sql
+- 0012_ai_sdk_v6_migration.sql
+- 0013_dashboard_indexes.sql
+- 0014_generated_columns.sql
 
 ---
 
 ## Deployment Status
 
 ### Workers Deployed
-| Worker | Status | Version ID |
-|--------|--------|------------|
-| uplink-core | ✅ Active | 4951f574-b6c9-4851-b13f-fa9bec42d53a |
-| uplink-edge | ✅ Active | 328cbbec-f8e6-40b2-8af5-016e960080ee |
-| uplink-ops | ✅ Active | ff2915c5-99a2-4b7d-97f3-a02318b6c3ba |
-| uplink-browser | ✅ Active | 9385c74f-239d-49dc-b856-a146fafec2e0 |
+| Worker | Status | Deployment ID | Routing |
+|--------|--------|---------------|---------|
+| uplink-core | ✅ Active | 37e07676... | Public (workers_dev) |
+| uplink-edge | ✅ Active | 25f4cf8a... | Public (workers_dev) |
+| uplink-ops | ✅ Active | 8b8e941f... | Internal only (workers_dev=false) |
+| uplink-browser | ✅ Active | a0e01a6b... | Internal only (workers_dev=false) |
 
 ### Cloudflare Resources
 | Resource | ID/Name | Status |
@@ -223,7 +226,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Test Coverage | 587 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
-| Last Verified | April 23, 2026 |
+| Secrets Configured | CORE_INTERNAL_KEY, INGEST_API_KEY, BROWSER_API_KEY, DASHBOARD_PASSWORD |
+| Last Verified | April 24, 2026 |
 | Documentation | 11 files, ~3,750 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
 | CI/CD Workflows | 1 (GitHub Actions) |
@@ -234,8 +238,13 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ No debugger statements
 - ✅ Strict TypeScript enabled
 - ✅ All type checks pass
-- ✅ All tests pass (554)
+- ✅ All tests pass (483)
 - ✅ Biome linting clean
+- ✅ All 4 workers deployed and healthy
+- ✅ Smoke test passes (9/9)
+- ✅ Auth verified on all protected endpoints
+- ✅ DLQ resilience with try/catch wrapping
+- ✅ Dashboard auth only parses actual form submissions
 - ✅ No secrets in code
 - ✅ Core worker refactored into 15 route modules
 - ✅ CI/CD pipeline configured
@@ -327,8 +336,8 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ---
 
-**Last Updated:** April 14, 2026  
-**Status:** ✅ PRODUCTION READY
+**Last Updated:** April 24, 2026  
+**Status:** ✅ PRODUCTION READY — LIVE VALIDATED
 
 ---
 

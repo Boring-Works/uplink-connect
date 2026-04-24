@@ -5,6 +5,16 @@ All notable changes to Uplink Connect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-04-24
+
+### Production Validation & Hardening
+
+- **Dashboard auth body parsing fix** — Only parse form data when Content-Type is `multipart/form-data` or `application/x-www-form-urlencoded`; prevents JSON POSTs from causing 401 loops
+- **DLQ error resilience** — Wrapped `sendToDlq()` calls in try/catch to prevent infinite retry loops if DLQ itself fails
+- **Ops proxy auth hardening** — Added missing `CORE_INTERNAL_KEY` check in `proxyToCore()`; fails closed with 500 instead of proxying unauthenticated requests
+- **Smoke test fixes** — Updated URLs from `boringworks.workers.dev` to `codyboring.workers.dev`; added handling for 404 responses from internal-only workers
+- **Production validation report** — Comprehensive live endpoint verification, D1 state check, security audit, and sign-off documented in `PRODUCTION_VALIDATION_REPORT.md`
+
 ## [0.1.2] - 2026-04-23
 
 ### Security & Hardening
