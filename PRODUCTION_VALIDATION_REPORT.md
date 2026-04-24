@@ -29,10 +29,10 @@ All 4 UplinkConnect services have been comprehensively validated in production. 
 
 | Worker | Routing | Deployment ID | Status |
 |--------|---------|---------------|--------|
-| `uplink-core` | Public | `37e07676...` | ✅ Healthy |
-| `uplink-edge` | Public | `25f4cf8a...` | ✅ Healthy |
-| `uplink-ops` | Internal only | `8b8e941f...` | ✅ Healthy (via service binding) |
-| `uplink-browser` | Internal only | `a0e01a6b...` | ✅ Healthy (via service binding) |
+| `uplink-core` | Public | `d340c4ac-597a-417f-b1f4-81d633feed54` | ✅ Healthy |
+| `uplink-edge` | Public | `81aa2702-1832-468b-953a-1eb90844f461` | ✅ Healthy |
+| `uplink-ops` | Internal only | `f32067e6-5868-4403-9218-0bc42e6fc4cb` | ✅ Healthy (via service binding) |
+| `uplink-browser` | Internal only | `9601c73f-da06-47ba-8a6f-1ac4c1a470ac` | ✅ Healthy (via service binding) |
 
 ### Cloudflare Resources
 
