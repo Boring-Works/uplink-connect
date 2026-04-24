@@ -21,13 +21,14 @@ app.get("/internal/alerts", async (c) => {
 	const acknowledged = c.req.query("acknowledged");
 	const limitRaw = c.req.query("limit") ?? "100";
 	const limit = Number.parseInt(limitRaw, 10);
+	const effectiveLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 100, 1000));
 
 	const alerts = await listActiveAlerts(c.env.CONTROL_DB, {
 		severity,
 		alertType,
 		sourceId,
 		acknowledged: acknowledged !== undefined ? acknowledged === "true" : undefined,
-		limit: Number.isFinite(limit) ? limit : 100,
+		limit: effectiveLimit,
 	});
 
 	return c.json({ alerts, total: alerts.length });

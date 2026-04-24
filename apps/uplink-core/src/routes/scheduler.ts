@@ -102,6 +102,9 @@ app.post("/internal/schedules/bulk-delete", async (c) => {
 	if (!Array.isArray(ids) || ids.length === 0) {
 		return c.json({ error: "scheduleIds array required" }, 400);
 	}
+	if (ids.length > 100) {
+		return c.json({ error: "Too many schedules", max: 100 }, 413);
+	}
 	let deleted = 0;
 	for (const id of ids) {
 		const result = await deleteSourceSchedule(c.env.CONTROL_DB, id);
@@ -117,6 +120,9 @@ app.post("/internal/schedules/bulk-toggle", async (c) => {
 	const enabled = (body as { enabled?: boolean }).enabled;
 	if (!Array.isArray(ids) || ids.length === 0 || typeof enabled !== "boolean") {
 		return c.json({ error: "scheduleIds array and enabled boolean required" }, 400);
+	}
+	if (ids.length > 100) {
+		return c.json({ error: "Too many schedules", max: 100 }, 413);
 	}
 	let updated = 0;
 	for (const id of ids) {

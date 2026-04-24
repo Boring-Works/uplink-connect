@@ -72,7 +72,7 @@ app.get("/internal/dashboard", async (c) => {
 app.get("/internal/dashboard/v2", async (c) => {
 	const windowRaw = c.req.query("window") ?? "86400";
 	const windowSeconds = Number.parseInt(windowRaw, 10);
-	const effectiveWindow = Number.isFinite(windowSeconds) ? windowSeconds : 86400;
+	const effectiveWindow = Math.max(60, Math.min(Number.isFinite(windowSeconds) ? windowSeconds : 86400, 30 * 86400));
 
 	const [
 		systemMetrics,

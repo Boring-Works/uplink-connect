@@ -111,6 +111,12 @@ export class SourceCoordinator extends DurableObject<Env> {
 			return Response.json(this.getHealthStatus());
 		}
 
+		// Require internal auth for all mutating endpoints
+		const internalKey = request.headers.get("x-uplink-internal-key");
+		if (!internalKey || internalKey !== this.env.CORE_INTERNAL_KEY) {
+			return new Response("Unauthorized", { status: 401 });
+		}
+
 		if (request.method !== "POST") {
 			return new Response("Method Not Allowed", { status: 405 });
 		}

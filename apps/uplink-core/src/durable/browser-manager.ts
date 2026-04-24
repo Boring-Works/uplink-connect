@@ -140,6 +140,14 @@ export class BrowserManagerDO extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
+    // Require internal auth for all endpoints except health
+    if (url.pathname !== "/status") {
+      const internalKey = request.headers.get("x-uplink-internal-key");
+      if (!internalKey || internalKey !== this.env.CORE_INTERNAL_KEY) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+    }
+
     try {
       switch (url.pathname) {
         case "/status":
