@@ -31,6 +31,15 @@ import schedulerRoutes from "./routes/scheduler";
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Security headers middleware
+app.use("*", async (c, next) => {
+	await next();
+	c.header("X-Content-Type-Options", "nosniff");
+	c.header("X-Frame-Options", "DENY");
+	c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+	c.header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src fonts.gstatic.com; script-src 'none'; connect-src 'self' wss:;");
+});
+
 // Health (no auth)
 app.route("/", healthRoutes);
 

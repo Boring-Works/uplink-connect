@@ -11,6 +11,7 @@ import type { Env } from "../types";
 import { getCoordinatorStub, recordCoordinatorFailure, recordCoordinatorSuccess, releaseLease } from "../lib/coordinator-client";
 import { getSourceConfigWithPolicy, setRunStatus, upsertRuntimeSnapshot } from "../lib/db";
 import { writeMetric } from "../lib/metrics";
+import { isAllowedSourceUrl } from "../lib/url-validation";
 
 export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkflowParams> {
 	async run(event: WorkflowEvent<CollectionWorkflowParams>): Promise<{
@@ -38,6 +39,12 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 
 			const adapter = createSourceAdapter(sourceLookup.config.type);
 			const timeoutMs = Math.min(sourceLookup.policy.timeoutSeconds * 1000, 30000);
+
+			// SSRF protection: validate endpoint URL before fetching
+			if (sourceLookup.config.endpointUrl && !isAllowedSourceUrl(sourceLookup.config.endpointUrl)) {
+				throw new Error(`SSRF_BLOCKED: URL not allowed: ${sourceLookup.config.endpointUrl}`);
+			}
+
 			const adapterResult = await adapter.collect(
 				{
 					sourceId: sourceLookup.config.sourceId,
