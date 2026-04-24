@@ -4,6 +4,7 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-04-12",
 	"compatibility_flags": ["nodejs_compat"],
+	"placement": { "mode": "smart" },
 	"workers_dev": true,
 	"observability": {
 		"enabled": true,
@@ -104,6 +105,10 @@
 	"ai": {
 		"binding": "AI"
 	},
+	"ai_gateway": {
+		"binding": "AI_GATEWAY",
+		"gateway_id": "uplink-ai-gateway"
+	},
 	"kv_namespaces": [
 		{
 			"binding": "ALERT_CACHE",
@@ -117,7 +122,9 @@
 				"max_batch_size": 10,
 				"max_batch_timeout": 30,
 				"max_retries": 3,
-				"dead_letter_queue": "uplink-ingest-dlq"
+				"dead_letter_queue": "uplink-ingest-dlq",
+			"max_concurrency": 10,
+			"retry_delay": 5
 			}
 		],
 		"producers": [

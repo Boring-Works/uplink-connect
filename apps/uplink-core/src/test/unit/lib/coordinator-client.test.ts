@@ -6,6 +6,11 @@ import {
 	getCoordinatorState,
 	getCoordinatorStub,
 	getBrowserManagerStub,
+	requestBrowserSession,
+	releaseBrowserSession,
+	heartbeatBrowserSession,
+	getBrowserManagerStatus,
+	forceBrowserManagerCleanup,
 } from "../../../lib/coordinator-client";
 
 describe("coordinator-client", () => {
@@ -52,11 +57,7 @@ describe("coordinator-client", () => {
 	describe("acquireLease", () => {
 		it("returns lease on success", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify({ acquired: true, leaseToken: "token-123", expiresAt: 12345 }), {
-						status: 200,
-					})
-				),
+				acquireLease: vi.fn().mockResolvedValue({ acquired: true, leaseToken: "token-123", expiresAt: 12345 }),
 				id: { name: "source-1" },
 			} as unknown as DurableObjectStub;
 
@@ -69,9 +70,9 @@ describe("coordinator-client", () => {
 			expect(result.leaseToken).toBe("token-123");
 		});
 
-		it("throws on failure response", async () => {
+		it("propagates errors from RPC", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(new Response("Lease conflict", { status: 409 })),
+				acquireLease: vi.fn().mockRejectedValue(new Error("Lease conflict")),
 				id: { name: "source-1" },
 			} as unknown as DurableObjectStub;
 
@@ -80,11 +81,9 @@ describe("coordinator-client", () => {
 			).rejects.toThrow("Lease conflict");
 		});
 
-		it("includes sourceId in request body", async () => {
+		it("includes sourceId in RPC params", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify({ acquired: true, leaseToken: "token-123" }), { status: 200 })
-				),
+				acquireLease: vi.fn().mockResolvedValue({ acquired: true, leaseToken: "token-123" }),
 				name: "source-1",
 			} as unknown as DurableObjectStub;
 
@@ -94,15 +93,12 @@ describe("coordinator-client", () => {
 				sourceId: "explicit-source",
 			});
 
-			const body = JSON.parse((mockStub.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-			expect(body.sourceId).toBe("explicit-source");
+			expect((mockStub.acquireLease as ReturnType<typeof vi.fn>).mock.calls[0][0].sourceId).toBe("explicit-source");
 		});
 
-		it("includes force flag in request body", async () => {
+		it("includes force flag in RPC params", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify({ acquired: true, leaseToken: "token-123" }), { status: 200 })
-				),
+				acquireLease: vi.fn().mockResolvedValue({ acquired: true, leaseToken: "token-123" }),
 				id: { name: "source-1" },
 			} as unknown as DurableObjectStub;
 
@@ -112,26 +108,23 @@ describe("coordinator-client", () => {
 				force: true,
 			});
 
-			const body = JSON.parse((mockStub.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-			expect(body.force).toBe(true);
+			expect((mockStub.acquireLease as ReturnType<typeof vi.fn>).mock.calls[0][0].force).toBe(true);
 		});
 	});
 
 	describe("releaseLease", () => {
 		it("returns true on success", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify({ released: true }), { status: 200 })
-				),
+				releaseLease: vi.fn().mockResolvedValue({ released: true }),
 			} as unknown as DurableObjectStub;
 
 			const result = await releaseLease(mockStub, "token-123");
 			expect(result).toBe(true);
 		});
 
-		it("throws on failure response", async () => {
+		it("propagates errors from RPC", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(new Response("Invalid token", { status: 400 })),
+				releaseLease: vi.fn().mockRejectedValue(new Error("Invalid token")),
 			} as unknown as DurableObjectStub;
 
 			await expect(releaseLease(mockStub, "token-123")).rejects.toThrow("Invalid token");
@@ -139,9 +132,7 @@ describe("coordinator-client", () => {
 
 		it("returns false when released is not true", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify({ released: false }), { status: 200 })
-				),
+				releaseLease: vi.fn().mockResolvedValue({ released: false }),
 			} as unknown as DurableObjectStub;
 
 			const result = await releaseLease(mockStub, "token-123");
@@ -158,9 +149,7 @@ describe("coordinator-client", () => {
 				updatedAt: Date.now(),
 			};
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify(mockSnapshot), { status: 200 })
-				),
+				advanceCursor: vi.fn().mockResolvedValue(mockSnapshot),
 			} as unknown as DurableObjectStub;
 
 			const result = await advanceCursor(mockStub, {
@@ -171,31 +160,14 @@ describe("coordinator-client", () => {
 			expect(result.cursor).toBe("cursor-2");
 		});
 
-		it("throws on failure response", async () => {
+		it("propagates errors from RPC", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(new Response("Lease expired", { status: 409 })),
+				advanceCursor: vi.fn().mockRejectedValue(new Error("Lease expired")),
 			} as unknown as DurableObjectStub;
 
 			await expect(
 				advanceCursor(mockStub, { leaseToken: "token-123", cursor: "cursor-2" })
 			).rejects.toThrow("Lease expired");
-		});
-
-		it("includes failure count in request body", async () => {
-			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify({ cursor: "cursor-2" }), { status: 200 })
-				),
-			} as unknown as DurableObjectStub;
-
-			await advanceCursor(mockStub, {
-				leaseToken: "token-123",
-				cursor: "cursor-2",
-				consecutiveFailures: 2,
-			});
-
-			const body = JSON.parse((mockStub.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-			expect(body.consecutiveFailures).toBe(2);
 		});
 	});
 
@@ -207,21 +179,71 @@ describe("coordinator-client", () => {
 				updatedAt: Date.now(),
 			};
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(
-					new Response(JSON.stringify(mockState), { status: 200 })
-				),
+				getState: vi.fn().mockResolvedValue(mockState),
 			} as unknown as DurableObjectStub;
 
 			const result = await getCoordinatorState(mockStub);
 			expect(result.sourceId).toBe("source-1");
 		});
 
-		it("throws on failure response", async () => {
+		it("propagates errors from RPC", async () => {
 			const mockStub = {
-				fetch: vi.fn().mockResolvedValue(new Response("Not found", { status: 404 })),
+				getState: vi.fn().mockRejectedValue(new Error("Not found")),
 			} as unknown as DurableObjectStub;
 
-			await expect(getCoordinatorState(mockStub)).rejects.toThrow("404");
+			await expect(getCoordinatorState(mockStub)).rejects.toThrow("Not found");
+		});
+	});
+
+	describe("BrowserManager RPC wrappers", () => {
+		it("requestBrowserSession calls requestSessionRpc", async () => {
+			const mockStub = {
+				requestSessionRpc: vi.fn().mockResolvedValue({ assigned: true, sessionId: "sess-1" }),
+			} as unknown as DurableObjectStub;
+
+			const result = await requestBrowserSession(mockStub, { sourceId: "src-1", requestId: "req-1" });
+			expect(result.assigned).toBe(true);
+			expect(result.sessionId).toBe("sess-1");
+			expect((mockStub.requestSessionRpc as ReturnType<typeof vi.fn>).mock.calls[0][0]).toEqual({
+				sourceId: "src-1",
+				requestId: "req-1",
+			});
+		});
+
+		it("releaseBrowserSession calls releaseSessionRpc", async () => {
+			const mockStub = {
+				releaseSessionRpc: vi.fn().mockResolvedValue({ released: true }),
+			} as unknown as DurableObjectStub;
+
+			const result = await releaseBrowserSession(mockStub, { sessionId: "sess-1", sourceId: "src-1" });
+			expect(result.released).toBe(true);
+		});
+
+		it("heartbeatBrowserSession calls heartbeatRpc", async () => {
+			const mockStub = {
+				heartbeatRpc: vi.fn().mockResolvedValue({ ok: true }),
+			} as unknown as DurableObjectStub;
+
+			const result = await heartbeatBrowserSession(mockStub, { sessionId: "sess-1", sourceId: "src-1" });
+			expect(result.ok).toBe(true);
+		});
+
+		it("getBrowserManagerStatus calls getStatusRpc", async () => {
+			const mockStub = {
+				getStatusRpc: vi.fn().mockResolvedValue({ sessions: { total: 5 } }),
+			} as unknown as DurableObjectStub;
+
+			const result = await getBrowserManagerStatus(mockStub);
+			expect(result).toEqual({ sessions: { total: 5 } });
+		});
+
+		it("forceBrowserManagerCleanup calls forceCleanupRpc", async () => {
+			const mockStub = {
+				forceCleanupRpc: vi.fn().mockResolvedValue({ cleaned: 3 }),
+			} as unknown as DurableObjectStub;
+
+			const result = await forceBrowserManagerCleanup(mockStub);
+			expect(result.cleaned).toBe(3);
 		});
 	});
 });

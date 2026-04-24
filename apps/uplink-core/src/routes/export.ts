@@ -48,11 +48,11 @@ app.get("/internal/export/runs", async (c) => {
 		params.push(sourceId);
 	}
 	if (startDate) {
-		sql += " AND created_at >= ?";
+		sql += " AND created_at >= unixepoch(?)";
 		params.push(startDate);
 	}
 	if (endDate) {
-		sql += " AND created_at <= ?";
+		sql += " AND created_at <= unixepoch(?)";
 		params.push(endDate);
 	}
 	if (status) {

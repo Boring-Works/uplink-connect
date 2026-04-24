@@ -9,8 +9,9 @@ import {
 } from "../lib/scheduler";
 import { getSourceConfigWithPolicy } from "../lib/db";
 import { getCoordinatorStub, acquireLease } from "../lib/coordinator-client";
-import { toIsoNow } from "@uplink/contracts";
+import { toIsoNow, escapeHtml } from "@uplink/contracts";
 import { ensureDashboardAuth } from "../lib/dashboard-auth";
+
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -146,18 +147,20 @@ app.post("/internal/schedules/:scheduleId/trigger", async (c) => {
 		return c.json({ error: "No lease token returned" }, 500);
 	}
 
-	// Fire-and-forget the collection via DO
-	const doUrl = new URL(c.req.url);
-	doUrl.pathname = `/collect`;
-	doUrl.searchParams.set("sourceId", schedule.sourceId);
-	doUrl.searchParams.set("leaseToken", lease.leaseToken);
-	doUrl.searchParams.set("triggeredBy", "scheduler-manual");
+	// Fire-and-forget the collection via workflow (same pattern as cron trigger)
+	const workflowPromise = c.env.COLLECTION_WORKFLOW.create({
+		params: {
+			sourceId: schedule.sourceId,
+			leaseToken: lease.leaseToken,
+			triggeredBy: "scheduler-manual",
+			reason: "Manual trigger from scheduler",
+			force: false,
+		},
+	}).catch((err) => {
+		console.error("[scheduler] manual trigger workflow creation failed:", err);
+	});
 
-	c.executionCtx.waitUntil(
-		coordinator.fetch(doUrl.toString(), { method: "POST" }).catch((err) => {
-			console.error("[scheduler] manual trigger failed:", err);
-		}),
-	);
+	c.executionCtx.waitUntil(workflowPromise);
 
 	return c.json({ ok: true, triggeredAt: toIsoNow(), sourceId: schedule.sourceId });
 });
@@ -227,15 +230,7 @@ app.get("/scheduler", async (c) => {
 	return c.html(html);
 });
 
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;")
-		.replace(/\//g, "&#47;");
-}
+
 
 interface SchedulerHtmlParams {
 	schedulesJson: string;

@@ -46,7 +46,7 @@ uplink-ops       → Protected operations API
 - ✅ Workflow-driven collection with automatic retries
 - ✅ Queue-based async processing with DLQ
 - ✅ R2 raw artifact storage with structured key paths
-- ✅ D1 operational data store (17 tables, 10 migrations)
+- ✅ D1 operational data store (17 tables, 14 migrations)
 - ✅ Entity normalization, deduplication, and relationship linking
 - ✅ Vectorize semantic search
 - ✅ Comprehensive metrics and alerting with Analytics Engine
@@ -64,7 +64,7 @@ uplink-ops       → Protected operations API
 - ✅ Webhook HMAC signature verification
 - ✅ File upload endpoint with multipart/form-data
 - ✅ AST-based code chunking for TS/JS ingestion
-- ✅ 554+ tests passing (274 unit + 35 integration + 6 e2e + 18 live + 101 worker + 115 package)
+- ✅ 652+ tests passing (590 unit + 35 integration + 6 e2e + 21 live)
 
 ### API Surface
 
@@ -108,7 +108,7 @@ UplinkConnect/
 │   │   │   │   ├── dashboard-stream.ts      # DO for real-time dashboard
 │   │   │   │   └── error-agent.ts           # DO for RAG error diagnosis
 │   │   │   ├── routes/               # 15 route modules
-│   │   │   └── test/                 # 554+ tests (unit, integration, e2e, live)
+│   │   │   └── test/                 # 652+ tests (unit, integration, e2e, live)
 │   │   ├── migrations/       # 10 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
 │   │   └── package.json      # @uplink/core
@@ -193,6 +193,11 @@ UplinkConnect/
 7. `0007_settings_audit.sql` - Settings and audit log
 8. `0008_add_missing_columns.sql` - Schema fixes
 9. `0009_notification_deliveries.sql` - Notification tracking
+10. `0010_source_schedules.sql` - Source schedules
+11. `0011_error_dedup_hash.sql` - Error deduplication
+12. `0012_error_occurrence_count.sql` - Error occurrence counting
+13. `0013_performance_indexes.sql` - Dashboard query indexes
+14. `0014_generated_columns.sql` - Generated columns for metadata
 
 ## Commands
 
@@ -258,7 +263,7 @@ BROWSER_API_KEY=browser-dev-key
 
 - **Framework**: Vitest with @cloudflare/vitest-pool-workers
 - **Test Files**: 33+ test files across all workspaces
-- **Total Tests**: 554+ passing
+- **Total Tests**: 652+ passing (590 unit + 35 integration + 6 e2e + 21 live)
 - **Coverage Areas**:
   - Unit tests: lib modules, DOs, notifications, chunking
   - Integration: Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert

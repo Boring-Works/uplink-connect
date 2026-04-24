@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { getSettings, saveSettings, logAuditEvent, getAuditLog } from "../lib/settings";
 import { ensureDashboardAuth } from "../lib/dashboard-auth";
+import { escapeHtml } from "@uplink/contracts";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -133,15 +134,7 @@ app.get("/audit-log", async (c) => {
 	return c.html(html);
 });
 
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;")
-		.replace(/\//g, "&#47;");
-}
+
 
 interface SettingsHtmlParams {
 	settingsJson: string;

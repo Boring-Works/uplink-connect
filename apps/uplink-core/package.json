@@ -1,6 +1,6 @@
 {
 	"name": "@uplink/core",
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -18,13 +18,15 @@
 		"@uplink/contracts": "workspace:*",
 		"@uplink/normalizers": "workspace:*",
 		"@uplink/source-adapters": "workspace:*",
-		"hono": "^4.12.8",
+		"ai": "^6.0.168",
+		"hono": "^4.12.15",
+		"workers-ai-provider": "^3.1.12",
 		"zod": "^3.24.2"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.8.15",
+		"@cloudflare/vitest-pool-workers": "^0.8.71",
 		"typescript": "^5.8.3",
-		"vitest": "^3.0.9",
-		"wrangler": "^4.38.0"
+		"vitest": "^3.2.4",
+		"wrangler": "^4.85.0"
 	}
 }

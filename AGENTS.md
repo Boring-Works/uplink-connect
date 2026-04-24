@@ -148,7 +148,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Testing
 - Vitest with @cloudflare/vitest-pool-workers
-- 554+ tests across unit, integration, e2e, live
+- 652+ tests across unit, integration, e2e, live
 - Tests run in actual Workers runtime
 
 ---

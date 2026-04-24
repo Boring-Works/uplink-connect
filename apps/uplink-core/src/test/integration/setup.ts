@@ -6,6 +6,14 @@ import migration0003 from "../../../migrations/0003_entity_plane.sql?raw";
 import migration0004 from "../../../migrations/0004_retention_audit.sql?raw";
 import migration0005 from "../../../migrations/0005_alerting_metrics.sql?raw";
 import migration0006 from "../../../migrations/0006_retry_tracking.sql?raw";
+import migration0007 from "../../../migrations/0007_settings_audit.sql?raw";
+import migration0008 from "../../../migrations/0008_add_missing_columns.sql?raw";
+import migration0009 from "../../../migrations/0009_notification_deliveries.sql?raw";
+import migration0010 from "../../../migrations/0010_source_schedules.sql?raw";
+import migration0011 from "../../../migrations/0011_error_dedup_hash.sql?raw";
+import migration0012 from "../../../migrations/0012_error_occurrence_count.sql?raw";
+import migration0013 from "../../../migrations/0013_performance_indexes.sql?raw";
+import migration0014 from "../../../migrations/0014_generated_columns.sql?raw";
 
 const migrations = [
 	{ name: "0001_control_schema.sql", sql: migration0001 },
@@ -14,6 +22,14 @@ const migrations = [
 	{ name: "0004_retention_audit.sql", sql: migration0004 },
 	{ name: "0005_alerting_metrics.sql", sql: migration0005 },
 	{ name: "0006_retry_tracking.sql", sql: migration0006 },
+	{ name: "0007_settings_audit.sql", sql: migration0007 },
+	{ name: "0008_add_missing_columns.sql", sql: migration0008 },
+	{ name: "0009_notification_deliveries.sql", sql: migration0009 },
+	{ name: "0010_source_schedules.sql", sql: migration0010 },
+	{ name: "0011_error_dedup_hash.sql", sql: migration0011 },
+	{ name: "0012_error_occurrence_count.sql", sql: migration0012 },
+	{ name: "0013_performance_indexes.sql", sql: migration0013 },
+	{ name: "0014_generated_columns.sql", sql: migration0014 },
 ];
 
 let schemaReady = false;
@@ -59,7 +75,17 @@ async function applyMigrationSql(sql: string): Promise<void> {
 		.filter((statement) => statement.length > 0);
 
 	for (const statement of statements) {
-		await env.CONTROL_DB.prepare(statement).run();
+		try {
+			await env.CONTROL_DB.prepare(statement).run();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			// Ignore duplicate column/table errors — migrations may re-add columns
+			// that already exist in newer CREATE TABLE statements
+			if (message.includes("duplicate column name") || message.includes("already exists")) {
+				continue;
+			}
+			throw err;
+		}
 	}
 }
 

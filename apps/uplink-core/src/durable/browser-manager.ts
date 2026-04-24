@@ -1,21 +1,22 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../types";
 
+
 /**
- * BrowserManagerDO - Inspired by weblinq's coordination patterns
- * 
- * Manages a pool of browser sessions with:
+ * BrowserManagerDO - Manages a pool of browser sessions with:
  * - Queueing when capacity is full
  * - Session reuse and assignment
  * - Health tracking and automatic cleanup
  * - Backpressure handling
+ *
+ * Migrated to DO SQL API for structured session storage and querying.
  */
 
-export type BrowserSessionStatus = 
-  | "available" 
-  | "assigned" 
-  | "busy" 
-  | "cleanup" 
+export type BrowserSessionStatus =
+  | "available"
+  | "assigned"
+  | "busy"
+  | "cleanup"
   | "error";
 
 export interface BrowserSession {
@@ -37,64 +38,103 @@ export interface SessionAssignment {
   reason?: string;
 }
 
-export interface ManagerState {
-  maxSessions: number;
-  maxQueueSize: number;
-  sessionTimeoutMs: number;
-  cleanupIntervalMs: number;
-  sessions: Map<string, BrowserSession>;
-  queue: Array<{
-    requestId: string;
-    sourceId: string;
-    enqueuedAt: number;
-  }>;
-  stats: {
-    totalCreated: number;
-    totalReused: number;
-    totalCleanedUp: number;
-    totalErrors: number;
-    peakConcurrent: number;
-  };
-}
+// Backpressure configuration
+const CONFIG = {
+  maxSessions: 10,
+  maxQueueSize: 50,
+  sessionTimeoutMs: 300000, // 5 minutes
+  cleanupIntervalMs: 60000, // 1 minute
+};
 
-const STATE_KEY = "manager_state";
+// Schema version for migrations
+const SCHEMA_VERSION_KEY = "_schema_version";
+const CURRENT_SCHEMA_VERSION = 1;
 
 export class BrowserManagerDO extends DurableObject<Env> {
-  private state: ManagerState;
+  private sql: SqlStorage;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    
-    this.state = {
-      maxSessions: 10,
-      maxQueueSize: 50,
-      sessionTimeoutMs: 300000, // 5 minutes
-      cleanupIntervalMs: 60000, // 1 minute
-      sessions: new Map(),
-      queue: [],
-      stats: {
-        totalCreated: 0,
-        totalReused: 0,
-        totalCleanedUp: 0,
-        totalErrors: 0,
-        peakConcurrent: 0,
-      },
-    };
+    this.sql = ctx.storage.sql;
 
-    // Restore persisted state
     ctx.blockConcurrencyWhile(async () => {
-      const persisted = await this.ctx.storage.get<ManagerState>(STATE_KEY);
-      if (persisted) {
-        // Restore Map from plain object
-        this.state = {
-          ...persisted,
-          sessions: new Map(Object.entries(persisted.sessions || {})),
-        };
-      }
-      
-      // Start cleanup alarm
+      await this.ensureSchema();
       await this.scheduleCleanup();
     });
+  }
+
+  private async ensureSchema(): Promise<void> {
+    const version = await this.getSchemaVersion();
+    if (version >= CURRENT_SCHEMA_VERSION) return;
+
+    // Sessions table
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL CHECK(status IN ('available', 'assigned', 'busy', 'cleanup', 'error')),
+        assigned_to TEXT,
+        assigned_at INTEGER,
+        last_used_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT DEFAULT '{}'
+      )
+    `);
+
+    // Queue table
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS session_queue (
+        request_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        enqueued_at INTEGER NOT NULL
+      )
+    `);
+
+    // Stats table (single row)
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS stats (
+        key TEXT PRIMARY KEY,
+        total_created INTEGER NOT NULL DEFAULT 0,
+        total_reused INTEGER NOT NULL DEFAULT 0,
+        total_cleaned_up INTEGER NOT NULL DEFAULT 0,
+        total_errors INTEGER NOT NULL DEFAULT 0,
+        peak_concurrent INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    // Initialize stats row if not present
+    this.sql.exec(`
+      INSERT OR IGNORE INTO stats (key, total_created, total_reused, total_cleaned_up, total_errors, peak_concurrent)
+      VALUES ('global', 0, 0, 0, 0, 0)
+    `);
+
+    // Indexes
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_assigned_to ON sessions(assigned_to)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_last_used ON sessions(last_used_at)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_queue_enqueued ON session_queue(enqueued_at)`);
+
+    await this.setSchemaVersion(CURRENT_SCHEMA_VERSION);
+  }
+
+  private getSchemaVersion(): number {
+    try {
+      const result = this.sql.exec("SELECT value FROM _metadata WHERE key = ?", SCHEMA_VERSION_KEY).one() as { value: string } | null;
+      return result ? parseInt(result.value, 10) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private async setSchemaVersion(version: number): Promise<void> {
+    try {
+      this.sql.exec("CREATE TABLE IF NOT EXISTS _metadata (key TEXT PRIMARY KEY, value TEXT)");
+    } catch { /* may already exist */ }
+    this.sql.exec(
+      "INSERT OR REPLACE INTO _metadata (key, value) VALUES (?, ?)",
+      SCHEMA_VERSION_KEY,
+      String(version)
+    );
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -104,31 +144,34 @@ export class BrowserManagerDO extends DurableObject<Env> {
       switch (url.pathname) {
         case "/status":
           return Response.json(this.getStatus());
-        
-        case "/session/request":
+
+        case "/session/request": {
           if (request.method !== "POST") {
             return new Response("Method Not Allowed", { status: 405 });
           }
           const requestBody = (await request.json()) as { sourceId: string; requestId: string; priority?: number };
-          return Response.json(await this.requestSession(requestBody));
-        
-        case "/session/release":
+          return Response.json(await this.ctx.blockConcurrencyWhile(() => this.requestSession(requestBody)));
+        }
+
+        case "/session/release": {
           if (request.method !== "POST") {
             return new Response("Method Not Allowed", { status: 405 });
           }
           const releaseBody = (await request.json()) as { sessionId: string; sourceId: string; error?: boolean };
-          return Response.json(await this.releaseSession(releaseBody));
-        
-        case "/session/heartbeat":
+          return Response.json(await this.ctx.blockConcurrencyWhile(() => this.releaseSession(releaseBody)));
+        }
+
+        case "/session/heartbeat": {
           if (request.method !== "POST") {
             return new Response("Method Not Allowed", { status: 405 });
           }
           const heartbeatBody = (await request.json()) as { sessionId: string; sourceId: string };
-          return Response.json(await this.heartbeat(heartbeatBody));
-        
+          return Response.json(await this.ctx.blockConcurrencyWhile(() => this.heartbeat(heartbeatBody)));
+        }
+
         case "/admin/cleanup":
-          return Response.json(await this.forceCleanup());
-        
+          return Response.json(await this.ctx.blockConcurrencyWhile(() => this.forceCleanup()));
+
         default:
           return new Response("Not Found", { status: 404 });
       }
@@ -139,6 +182,29 @@ export class BrowserManagerDO extends DurableObject<Env> {
     }
   }
 
+  // === Native DO RPC methods ===
+  // Type-safe access without HTTP fetch
+
+  async requestSessionRpc(params: { sourceId: string; requestId: string; priority?: number }) {
+    return this.ctx.blockConcurrencyWhile(() => this.requestSession(params));
+  }
+
+  async releaseSessionRpc(params: { sessionId: string; sourceId: string; error?: boolean }) {
+    return this.ctx.blockConcurrencyWhile(() => this.releaseSession(params));
+  }
+
+  async heartbeatRpc(params: { sessionId: string; sourceId: string }) {
+    return this.ctx.blockConcurrencyWhile(() => this.heartbeat(params));
+  }
+
+  async getStatusRpc() {
+    return this.getStatus();
+  }
+
+  async forceCleanupRpc() {
+    return this.ctx.blockConcurrencyWhile(() => this.forceCleanup());
+  }
+
   async alarm(): Promise<void> {
     await this.performCleanup();
     await this.scheduleCleanup();
@@ -147,33 +213,56 @@ export class BrowserManagerDO extends DurableObject<Env> {
   private async scheduleCleanup(): Promise<void> {
     const existingAlarm = await this.ctx.storage.getAlarm();
     if (existingAlarm === null) {
-      await this.ctx.storage.setAlarm(Date.now() + this.state.cleanupIntervalMs);
+      await this.ctx.storage.setAlarm(Date.now() + CONFIG.cleanupIntervalMs);
     }
   }
 
   private getStatus(): object {
-    const activeSessions = Array.from(this.state.sessions.values()).filter(
-      s => s.status !== "cleanup" && s.status !== "error"
-    );
-    
-    const availableCount = activeSessions.filter(s => s.status === "available").length;
-    const assignedCount = activeSessions.filter(s => s.status === "assigned" || s.status === "busy").length;
-    
+    const activeSessions = this.sql.exec(
+      `SELECT COUNT(*) as count FROM sessions WHERE status NOT IN ('cleanup', 'error')`
+    ).one() as { count: number };
+
+    const availableCount = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM sessions WHERE status = 'available'`
+    ).one() as { count: number }).count;
+
+    const assignedCount = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM sessions WHERE status IN ('assigned', 'busy')`
+    ).one() as { count: number }).count;
+
+    const queueLength = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM session_queue`
+    ).one() as { count: number }).count;
+
+    const stats = this.sql.exec(`SELECT * FROM stats WHERE key = 'global'`).one() as {
+      total_created: number;
+      total_reused: number;
+      total_cleaned_up: number;
+      total_errors: number;
+      peak_concurrent: number;
+    };
+
     return {
       sessions: {
-        total: this.state.sessions.size,
+        total: activeSessions.count,
         available: availableCount,
         assigned: assignedCount,
-        max: this.state.maxSessions,
+        max: CONFIG.maxSessions,
       },
       queue: {
-        length: this.state.queue.length,
-        max: this.state.maxQueueSize,
+        length: queueLength,
+        max: CONFIG.maxQueueSize,
       },
-      stats: this.state.stats,
+      stats: {
+        totalCreated: stats.total_created,
+        totalReused: stats.total_reused,
+        totalCleanedUp: stats.total_cleaned_up,
+        totalErrors: stats.total_errors,
+        peakConcurrent: stats.peak_concurrent,
+      },
       utilization: {
-        current: assignedCount / this.state.maxSessions,
-        peak: this.state.stats.peakConcurrent / this.state.maxSessions,
+        current: assignedCount / CONFIG.maxSessions,
+        peak: stats.peak_concurrent / CONFIG.maxSessions,
       },
     };
   }
@@ -184,85 +273,94 @@ export class BrowserManagerDO extends DurableObject<Env> {
     priority?: number;
   }): Promise<SessionAssignment> {
     const { sourceId, requestId } = params;
-    
+    const now = Date.now();
+
     // Check for existing available session
-    const availableSession = this.findAvailableSession();
+    const availableSession = this.sql.exec(
+      `SELECT session_id FROM sessions WHERE status = 'available' ORDER BY last_used_at DESC LIMIT 1`
+    ).one() as { session_id: string } | null;
+
     if (availableSession) {
       // Reuse existing session
-      availableSession.status = "assigned";
-      availableSession.assignedTo = sourceId;
-      availableSession.assignedAt = Date.now();
-      availableSession.lastUsedAt = Date.now();
-      
-      this.state.stats.totalReused++;
-      await this.persist();
-      
-      console.log(`[BrowserManagerDO] Reused session ${availableSession.sessionId} for ${sourceId}`);
-      
+      this.sql.exec(
+        `UPDATE sessions SET status = 'assigned', assigned_to = ?, assigned_at = ?, last_used_at = ?
+         WHERE session_id = ?`,
+        sourceId, now, now, availableSession.session_id
+      );
+
+      this.sql.exec(
+        `UPDATE stats SET total_reused = total_reused + 1 WHERE key = 'global'`
+      );
+
+      console.log(`[BrowserManagerDO] Reused session ${availableSession.session_id} for ${sourceId}`);
+
       return {
-        sessionId: availableSession.sessionId,
+        sessionId: availableSession.session_id,
         assigned: true,
       };
     }
-    
+
     // Check if we can create a new session
-    const activeCount = Array.from(this.state.sessions.values()).filter(
-      s => s.status !== "cleanup" && s.status !== "error"
-    ).length;
-    
-    if (activeCount < this.state.maxSessions) {
+    const activeCount = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM sessions WHERE status NOT IN ('cleanup', 'error')`
+    ).one() as { count: number }).count;
+
+    if (activeCount < CONFIG.maxSessions) {
       // Create new session
       const sessionId = crypto.randomUUID();
-      const newSession: BrowserSession = {
-        sessionId,
-        status: "assigned",
-        assignedTo: sourceId,
-        assignedAt: Date.now(),
-        lastUsedAt: Date.now(),
-        createdAt: Date.now(),
-        errorCount: 0,
-      };
-      
-      this.state.sessions.set(sessionId, newSession);
-      this.state.stats.totalCreated++;
-      
-      if (activeCount + 1 > this.state.stats.peakConcurrent) {
-        this.state.stats.peakConcurrent = activeCount + 1;
+      this.sql.exec(
+        `INSERT INTO sessions (session_id, status, assigned_to, assigned_at, last_used_at, created_at, error_count)
+         VALUES (?, 'assigned', ?, ?, ?, ?, 0)`,
+        sessionId, sourceId, now, now, now
+      );
+
+      this.sql.exec(
+        `UPDATE stats SET total_created = total_created + 1 WHERE key = 'global'`
+      );
+
+      if (activeCount + 1 > this.getPeakConcurrent()) {
+        this.sql.exec(
+          `UPDATE stats SET peak_concurrent = ? WHERE key = 'global'`,
+          activeCount + 1
+        );
       }
-      
-      await this.persist();
-      
+
       console.log(`[BrowserManagerDO] Created new session ${sessionId} for ${sourceId}`);
-      
+
       return {
         sessionId,
         assigned: true,
       };
     }
-    
+
     // At capacity - check queue
-    if (this.state.queue.length >= this.state.maxQueueSize) {
+    const queueSize = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM session_queue`
+    ).one() as { count: number }).count;
+
+    if (queueSize >= CONFIG.maxQueueSize) {
       return {
         sessionId: "",
         assigned: false,
         reason: "At capacity and queue is full. Try again later.",
       };
     }
-    
+
     // Add to queue
-    this.state.queue.push({
-      requestId,
-      sourceId,
-      enqueuedAt: Date.now(),
-    });
-    
-    await this.persist();
-    
-    const queuePosition = this.state.queue.length;
+    this.sql.exec(
+      `INSERT INTO session_queue (request_id, source_id, enqueued_at) VALUES (?, ?, ?)`,
+      requestId, sourceId, now
+    );
+
+    const newQueueSize = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM session_queue`
+    ).one() as { count: number }).count;
+
+    const queuePosition = newQueueSize;
     const estimatedWaitMs = queuePosition * 30000; // Rough estimate: 30s per session
-    
+
     console.log(`[BrowserManagerDO] Queued request ${requestId} for ${sourceId} (position ${queuePosition})`);
-    
+
     return {
       sessionId: "",
       assigned: false,
@@ -278,43 +376,49 @@ export class BrowserManagerDO extends DurableObject<Env> {
     error?: boolean;
   }): Promise<{ released: boolean; reason?: string }> {
     const { sessionId, sourceId, error } = params;
-    
-    const session = this.state.sessions.get(sessionId);
+
+    const session = this.sql.exec(
+      `SELECT session_id, assigned_to, error_count, status FROM sessions WHERE session_id = ?`,
+      sessionId
+    ).one() as { session_id: string; assigned_to: string | null; error_count: number; status: string } | null;
+
     if (!session) {
       return { released: false, reason: "Session not found" };
     }
-    
-    if (session.assignedTo !== sourceId) {
+
+    if (session.assigned_to !== sourceId) {
       return { released: false, reason: "Session not assigned to this source" };
     }
-    
+
     if (error) {
-      session.errorCount++;
-      if (session.errorCount >= 3) {
-        // Too many errors, mark for cleanup
-        session.status = "error";
-        this.state.stats.totalErrors++;
-        console.log(`[BrowserManagerDO] Session ${sessionId} marked error after ${session.errorCount} errors`);
+      const newErrorCount = session.error_count + 1;
+      if (newErrorCount >= 3) {
+        this.sql.exec(
+          `UPDATE sessions SET status = 'error', error_count = ? WHERE session_id = ?`,
+          newErrorCount, sessionId
+        );
+        this.sql.exec(
+          `UPDATE stats SET total_errors = total_errors + 1 WHERE key = 'global'`
+        );
+        console.log(`[BrowserManagerDO] Session ${sessionId} marked error after ${newErrorCount} errors`);
       } else {
-        // Return to available pool
-        session.status = "available";
-        session.assignedTo = undefined;
-        session.assignedAt = undefined;
-        console.log(`[BrowserManagerDO] Session ${sessionId} returned to pool (error count: ${session.errorCount})`);
+        this.sql.exec(
+          `UPDATE sessions SET status = 'available', assigned_to = NULL, assigned_at = NULL, error_count = ? WHERE session_id = ?`,
+          newErrorCount, sessionId
+        );
+        console.log(`[BrowserManagerDO] Session ${sessionId} returned to pool (error count: ${newErrorCount})`);
       }
     } else {
-      // Successful release, return to available pool
-      session.status = "available";
-      session.assignedTo = undefined;
-      session.assignedAt = undefined;
+      this.sql.exec(
+        `UPDATE sessions SET status = 'available', assigned_to = NULL, assigned_at = NULL WHERE session_id = ?`,
+        sessionId
+      );
       console.log(`[BrowserManagerDO] Session ${sessionId} released and available`);
     }
-    
-    await this.persist();
-    
+
     // Try to assign to queued request
     await this.processQueue();
-    
+
     return { released: true };
   }
 
@@ -323,173 +427,143 @@ export class BrowserManagerDO extends DurableObject<Env> {
     sourceId: string;
   }): Promise<{ ok: boolean }> {
     const { sessionId, sourceId } = params;
-    
-    const session = this.state.sessions.get(sessionId);
-    if (!session || session.assignedTo !== sourceId) {
+
+    const session = this.sql.exec(
+      `SELECT session_id, assigned_to FROM sessions WHERE session_id = ?`,
+      sessionId
+    ).one() as { session_id: string; assigned_to: string | null } | null;
+
+    if (!session || session.assigned_to !== sourceId) {
       return { ok: false };
     }
-    
-    session.lastUsedAt = Date.now();
-    await this.persist();
-    
+
+    this.sql.exec(
+      `UPDATE sessions SET last_used_at = ? WHERE session_id = ?`,
+      Date.now(), sessionId
+    );
+
     return { ok: true };
   }
 
   private async performCleanup(): Promise<void> {
     const now = Date.now();
     let cleanedCount = 0;
-    
-    for (const [sessionId, session] of this.state.sessions) {
-      // Clean up stale assigned sessions
-      if (session.status === "assigned" || session.status === "busy") {
-        if (now - session.lastUsedAt > this.state.sessionTimeoutMs) {
-          session.status = "cleanup";
-          cleanedCount++;
-          console.log(`[BrowserManagerDO] Cleaned up stale session ${sessionId}`);
-        }
-      }
-      
-      // Clean up error/cleanup sessions after grace period
-      if (session.status === "error" || session.status === "cleanup") {
-        if (now - session.lastUsedAt > this.state.sessionTimeoutMs * 2) {
-          this.state.sessions.delete(sessionId);
-          this.state.stats.totalCleanedUp++;
-          console.log(`[BrowserManagerDO] Removed session ${sessionId} from registry`);
-        }
-      }
+
+    // Mark stale assigned sessions as cleanup
+    const staleResult = this.sql.exec(
+      `UPDATE sessions SET status = 'cleanup'
+       WHERE status IN ('assigned', 'busy') AND ? - last_used_at > ?
+       RETURNING session_id`,
+      now, CONFIG.sessionTimeoutMs
+    ) as Iterable<{ session_id: string }>;
+
+    for (const row of staleResult) {
+      cleanedCount++;
+      console.log(`[BrowserManagerDO] Cleaned up stale session ${row.session_id}`);
     }
-    
+
+    // Remove error/cleanup sessions after grace period
+    const removedResult = this.sql.exec(
+      `DELETE FROM sessions
+       WHERE status IN ('error', 'cleanup') AND ? - last_used_at > ?
+       RETURNING session_id`,
+      now, CONFIG.sessionTimeoutMs * 2
+    ) as Iterable<{ session_id: string }>;
+
+    for (const row of removedResult) {
+      cleanedCount++;
+      this.sql.exec(
+        `UPDATE stats SET total_cleaned_up = total_cleaned_up + 1 WHERE key = 'global'`
+      );
+      console.log(`[BrowserManagerDO] Removed session ${row.session_id} from registry`);
+    }
+
     // Clean up old queue entries
     const maxQueueAgeMs = 300000; // 5 minutes
-    const originalQueueLength = this.state.queue.length;
-    this.state.queue = this.state.queue.filter(
-      req => now - req.enqueuedAt < maxQueueAgeMs
-    );
-    const droppedFromQueue = originalQueueLength - this.state.queue.length;
-    
-    if (cleanedCount > 0 || droppedFromQueue > 0) {
-      console.log(`[BrowserManagerDO] Cleanup: ${cleanedCount} sessions, ${droppedFromQueue} queue entries`);
-      await this.persist();
+    const droppedFromQueue = this.sql.exec(
+      `DELETE FROM session_queue WHERE ? - enqueued_at > ?
+       RETURNING request_id`,
+      now, maxQueueAgeMs
+    ) as Iterable<{ request_id: string }>;
+
+    let droppedCount = 0;
+    for (const _ of droppedFromQueue) {
+      droppedCount++;
     }
-    
+
+    if (cleanedCount > 0 || droppedCount > 0) {
+      console.log(`[BrowserManagerDO] Cleanup: ${cleanedCount} sessions, ${droppedCount} queue entries`);
+    }
+
     // Process queue if sessions available
     await this.processQueue();
   }
 
   private async processQueue(): Promise<void> {
-    while (this.state.queue.length > 0) {
-      const availableSession = this.findAvailableSession();
+    while (true) {
+      const availableSession = this.sql.exec(
+        `SELECT session_id FROM sessions WHERE status = 'available' ORDER BY last_used_at DESC LIMIT 1`
+      ).one() as { session_id: string } | null;
+
       if (!availableSession) break;
-      
-      const queuedRequest = this.state.queue.shift();
+
+      const queuedRequest = this.sql.exec(
+        `SELECT request_id, source_id FROM session_queue ORDER BY enqueued_at ASC LIMIT 1`
+      ).one() as { request_id: string; source_id: string } | null;
+
       if (!queuedRequest) break;
-      
+
       // Assign session to queued request
-      availableSession.status = "assigned";
-      availableSession.assignedTo = queuedRequest.sourceId;
-      availableSession.assignedAt = Date.now();
-      availableSession.lastUsedAt = Date.now();
-      
-      console.log(`[BrowserManagerDO] Assigned session ${availableSession.sessionId} to queued request from ${queuedRequest.sourceId}`);
+      const now = Date.now();
+      this.sql.exec(
+        `UPDATE sessions SET status = 'assigned', assigned_to = ?, assigned_at = ?, last_used_at = ?
+         WHERE session_id = ?`,
+        queuedRequest.source_id, now, now, availableSession.session_id
+      );
+
+      this.sql.exec(
+        `DELETE FROM session_queue WHERE request_id = ?`,
+        queuedRequest.request_id
+      );
+
+      console.log(`[BrowserManagerDO] Assigned session ${availableSession.session_id} to queued request from ${queuedRequest.source_id}`);
     }
-    
-    await this.persist();
   }
 
   private async forceCleanup(): Promise<{ cleaned: number; queueCleared: number }> {
-    const beforeCount = this.state.sessions.size;
-    const beforeQueue = this.state.queue.length;
-    
+    const beforeCount = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM sessions`
+    ).one() as { count: number }).count;
+
+    const beforeQueue = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM session_queue`
+    ).one() as { count: number }).count;
+
     // Mark all sessions for cleanup
-    for (const session of this.state.sessions.values()) {
-      session.status = "cleanup";
-    }
-    
+    this.sql.exec(`UPDATE sessions SET status = 'cleanup'`);
+
     // Clear queue
-    this.state.queue = [];
-    
+    this.sql.exec(`DELETE FROM session_queue`);
+
     await this.performCleanup();
-    
+
+    const afterCount = (this.sql.exec(
+      `SELECT COUNT(*) as count FROM sessions`
+    ).one() as { count: number }).count;
+
     return {
-      cleaned: beforeCount - this.state.sessions.size,
+      cleaned: beforeCount - afterCount,
       queueCleared: beforeQueue,
     };
   }
 
-  private findAvailableSession(): BrowserSession | undefined {
-    for (const session of this.state.sessions.values()) {
-      if (session.status === "available") {
-        return session;
-      }
-    }
-    return undefined;
-  }
-
-  private async persist(): Promise<void> {
-    // Convert Map to plain object for storage
-    const stateToPersist = {
-      ...this.state,
-      sessions: Object.fromEntries(this.state.sessions),
-    };
-    await this.ctx.storage.put(STATE_KEY, stateToPersist);
+  private getPeakConcurrent(): number {
+    const result = this.sql.exec(
+      `SELECT peak_concurrent FROM stats WHERE key = 'global'`
+    ).one() as { peak_concurrent: number } | null;
+    return result?.peak_concurrent ?? 0;
   }
 }
 
-// Client helper for coordinating with BrowserManagerDO
-export async function requestBrowserSession(
-  managerStub: DurableObjectStub,
-  params: { sourceId: string; requestId: string }
-): Promise<SessionAssignment> {
-  const response = await managerStub.fetch("https://browser-manager/session/request", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to request session: ${response.status}`);
-  }
-  
-  return response.json() as Promise<SessionAssignment>;
-}
 
-export async function releaseBrowserSession(
-  managerStub: DurableObjectStub,
-  params: { sessionId: string; sourceId: string; error?: boolean }
-): Promise<{ released: boolean }> {
-  const response = await managerStub.fetch("https://browser-manager/session/release", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to release session: ${response.status}`);
-  }
-  
-  return response.json() as Promise<{ released: boolean }>;
-}
 
-export async function heartbeatBrowserSession(
-  managerStub: DurableObjectStub,
-  params: { sessionId: string; sourceId: string }
-): Promise<{ ok: boolean }> {
-  const response = await managerStub.fetch("https://browser-manager/session/heartbeat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  
-  if (!response.ok) {
-    return { ok: false };
-  }
-  
-  return response.json() as Promise<{ ok: boolean }>;
-}
-
-export function getBrowserManagerStub(env: Env): DurableObjectStub {
-  // @ts-ignore - BrowserManager binding will be added to Env
-  const id = env.BROWSER_MANAGER.idFromName("global");
-  // @ts-ignore
-  return env.BROWSER_MANAGER.get(id);
-}

@@ -2,7 +2,7 @@
 
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
-[![Tests](https://img.shields.io/badge/tests-554%2B%20passing-success)](./apps/uplink-core/src/test)
+[![Tests](https://img.shields.io/badge/tests-652%2B%20passing-success)](./apps/uplink-core/src/test)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -325,7 +325,7 @@ pnpm vitest run --config vitest.live.config.ts
 
 ### Test Coverage
 
-**554+ tests** across unit, integration, e2e, live, worker, and package test suites.
+**652+ tests** across unit, integration, e2e, live, worker, and package test suites.
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|

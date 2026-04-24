@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { toIsoNow, safeJsonStringify } from "@uplink/contracts";
+import { toIsoNow, safeJsonStringify, escapeHtml } from "@uplink/contracts";
 import {
 	getSystemMetrics,
 	getQueueMetrics,
@@ -422,15 +422,7 @@ app.get("/dashboard", async (c) => {
 	}
 });
 
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;")
-		.replace(/\//g, "&#47;");
-}
+
 
 interface DashboardHtmlParams {
 	overallStatus: string;

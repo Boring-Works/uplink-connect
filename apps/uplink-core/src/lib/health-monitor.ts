@@ -1,5 +1,5 @@
 import type { Env } from "../types";
-import { getCoordinatorStub, getBrowserManagerStub } from "./coordinator-client";
+import { getCoordinatorStub } from "./coordinator-client";
 
 export interface ComponentHealth {
 	id: string;
@@ -289,15 +289,13 @@ export async function getComponentHealth(env: Env): Promise<ComponentHealth[]> {
 	try {
 		const coordinator = getCoordinatorStub(env, "health-check");
 		const doStart = Date.now();
-		const doRes = await coordinator.fetch("https://source-coordinator/health", {
-			method: "GET",
-		});
+		const health = await coordinator.getHealth();
 		const doLatency = Date.now() - doStart;
 		components.push({
 			id: "do-coordinator",
 			name: "Source Coordinator DO",
 			type: "durable_object",
-			status: doRes.ok ? (doLatency > 1000 ? "degraded" : "healthy") : "degraded",
+			status: health.healthy ? (doLatency > 1000 ? "degraded" : "healthy") : "degraded",
 			lastCheckedAt: now,
 			latencyMs: doLatency,
 			metadata: {

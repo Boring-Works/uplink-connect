@@ -5,6 +5,52 @@ All notable changes to Uplink Connect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-04-23
+
+### Security & Hardening
+
+- **AI SDK v6 Migration** - `error-agent.ts` migrated to AI SDK v6 with `streamText().textStream`
+  - Uses `workers-ai-provider` with AI Gateway integration
+  - Added abort signal support for client disconnect cleanup
+  - Added timeout protection (`totalMs: 60s`, `chunkMs: 15s`)
+  - Added `maxOutputTokens: 2048` limit
+  - Added `onError` and `onFinish` callbacks for observability
+  - Replaced raw `env.AI.run()` embedding with idiomatic AI SDK `embed()`
+
+- **DO RPC Migration** - Type-safe RPC methods replacing HTTP fetch
+  - `SourceCoordinator`: `acquireLease`, `releaseLease`, `advanceCursor`, `recordSuccess`, `recordFailure`, `getState`, `getHealth`, `unpause`
+  - `BrowserManagerDO`: `requestSessionRpc`, `releaseSessionRpc`, `heartbeatRpc`, `getStatusRpc`, `forceCleanupRpc`
+  - All callers updated in `coordinator-client.ts`, `index.ts`, `routes/browser.ts`, `health-monitor.ts`
+
+- **DO SQL API Migration** - Persistent SQLite storage replacing in-memory state
+  - `BrowserManagerDO`: Migrated from KV blob to SQLite tables (`sessions`, `session_queue`, `stats`)
+  - `ErrorAgentDO`: Migrated from in-memory array to SQLite `chat_messages` with schema versioning
+  - `NotificationDispatcher`: Migrated from in-memory Maps to SQLite `retry_queue` + `rate_limits`
+
+- **Concurrency Safety** - `blockConcurrencyWhile` added to all mutating DO RPC methods and HTTP routes
+- **Auth Hardening** - `timingSafeEqual` for cookie token and password hash comparison
+- **SQL Injection Fix** - Whitelist validation for `findSourcesByMetadataField` column names
+- **Cache Invalidation** - `getSourceConfigWithPolicy` cache invalidated on all mutations
+- **Export Date Fix** - `unixepoch(?)` for proper ISO-to-epoch comparison
+
+### Infrastructure
+
+- **D1 Indexes** - Migration `0013_dashboard_indexes.sql` with 6 composite indexes
+- **Generated Columns** - Migration `0014_generated_columns.sql` with `source_type_generated`
+- **Batch Deletes** - `permanentlyDeleteSource` uses atomic `db.batch()`
+
+### Testing
+
+- **ErrorAgentDO Unit Tests** - New comprehensive test suite covering schema, auth, rate limiting, message persistence, WebSocket protocol, abort behavior, and stream handling
+- **E2E Test Fix** - Health endpoint test now handles degraded test environment gracefully
+- **Test Count**: 554 → 652 passing across all suites
+
+### Dependencies
+
+- Updated `hono` to `^4.12.15` (XSS vulnerability fix)
+- Updated `wrangler` to `^4.85.0`
+- Updated `@cloudflare/workers-types` to `^4.20260424.1`
+
 ## [0.1.1] - 2026-04-14
 
 ### Added

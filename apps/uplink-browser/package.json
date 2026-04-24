@@ -1,6 +1,6 @@
 {
 	"name": "@uplink/browser",
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -13,12 +13,12 @@
 	},
 	"dependencies": {
 		"@uplink/contracts": "workspace:*",
-		"hono": "^4.12.8",
+		"hono": "^4.12.15",
 		"zod": "^3.24.2"
 	},
 	"devDependencies": {
 		"typescript": "^5.8.3",
-		"vitest": "^3.0.9",
-		"wrangler": "^4.38.0"
+		"vitest": "^3.2.4",
+		"wrangler": "^4.85.0"
 	}
 }

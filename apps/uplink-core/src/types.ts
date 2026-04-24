@@ -16,6 +16,7 @@ export type Env = {
 	ENTITY_INDEX: VectorizeIndex;
 	OPS_METRICS: AnalyticsEngineDataset;
 	AI: Ai;
+	AI_GATEWAY?: AiGateway;
 	DLQ: Queue;
 	INGEST_QUEUE: Queue;
 	UPLINK_BROWSER: Fetcher;

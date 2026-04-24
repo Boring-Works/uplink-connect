@@ -1,4 +1,6 @@
 import type { Env, RuntimeSnapshot } from "../types";
+import type { SourceCoordinator } from "../durable/source-coordinator";
+import type { BrowserManagerDO } from "../durable/browser-manager";
 
 export type LeaseAcquireResult = {
 	acquired: boolean;
@@ -7,118 +9,89 @@ export type LeaseAcquireResult = {
 	expiresAt?: number;
 };
 
-export function getCoordinatorStub(env: Env, sourceId: string): DurableObjectStub {
+/** Typed stub for SourceCoordinator RPC calls */
+export type CoordinatorStub = DurableObjectStub<SourceCoordinator>;
+
+/** Typed stub for BrowserManagerDO RPC calls */
+export type BrowserManagerStub = DurableObjectStub<BrowserManagerDO>;
+
+export function getCoordinatorStub(env: Env, sourceId: string): CoordinatorStub {
 	return env.SOURCE_COORDINATOR.getByName(sourceId);
 }
 
-export function getBrowserManagerStub(env: Env): DurableObjectStub {
+export function getBrowserManagerStub(env: Env): BrowserManagerStub {
 	return env.BROWSER_MANAGER.getByName("global");
 }
 
-export async function acquireLease(
-	stub: DurableObjectStub,
-	params: { requestedBy: string; ttlSeconds: number; force?: boolean; sourceId?: string },
-): Promise<LeaseAcquireResult> {
-	const sourceId = params.sourceId ?? stub.name ?? stub.id.name;
-	const response = await stub.fetch("https://source-coordinator/lease/acquire", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ ...params, sourceId }),
-	});
+// === BrowserManagerDO RPC wrappers ===
 
-	if (!response.ok) {
-		const reason = await readErrorResponse(response);
-		throw new Error(`Failed to acquire source lease: ${reason}`);
-	}
-
-	return (await response.json()) as LeaseAcquireResult;
+export async function requestBrowserSession(
+	stub: BrowserManagerStub,
+	params: { sourceId: string; requestId: string; priority?: number },
+): Promise<{ sessionId: string; assigned: boolean; queuePosition?: number; estimatedWaitMs?: number; reason?: string }> {
+	return stub.requestSessionRpc(params);
 }
 
-export async function releaseLease(stub: DurableObjectStub, leaseToken: string): Promise<boolean> {
-	const response = await stub.fetch("https://source-coordinator/lease/release", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ leaseToken }),
-	});
+export async function releaseBrowserSession(
+	stub: BrowserManagerStub,
+	params: { sessionId: string; sourceId: string; error?: boolean },
+): Promise<{ released: boolean; reason?: string }> {
+	return stub.releaseSessionRpc(params);
+}
 
-	if (!response.ok) {
-		const reason = await readErrorResponse(response);
-		throw new Error(`Failed to release source lease: ${reason}`);
-	}
+export async function heartbeatBrowserSession(
+	stub: BrowserManagerStub,
+	params: { sessionId: string; sourceId: string },
+): Promise<{ ok: boolean }> {
+	return stub.heartbeatRpc(params);
+}
 
-	const payload = (await response.json()) as { released?: boolean };
-	return payload.released === true;
+export async function getBrowserManagerStatus(stub: BrowserManagerStub): Promise<object> {
+	return stub.getStatusRpc();
+}
+
+export async function forceBrowserManagerCleanup(stub: BrowserManagerStub): Promise<object> {
+	return stub.forceCleanupRpc();
+}
+
+export async function acquireLease(
+	stub: CoordinatorStub,
+	params: { requestedBy: string; ttlSeconds: number; force?: boolean; sourceId?: string },
+): Promise<LeaseAcquireResult> {
+	const sourceId = params.sourceId ?? stub.id.name ?? "unknown";
+	return stub.acquireLease({ ...params, sourceId });
+}
+
+export async function releaseLease(stub: CoordinatorStub, leaseToken: string): Promise<boolean> {
+	const result = await stub.releaseLease({ leaseToken });
+	return result.released;
 }
 
 export async function advanceCursor(
-	stub: DurableObjectStub,
+	stub: CoordinatorStub,
 	params: { leaseToken: string; cursor?: string; runId?: string },
 ): Promise<RuntimeSnapshot> {
-	const response = await stub.fetch("https://source-coordinator/cursor/advance", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(params),
-	});
-
-	if (!response.ok) {
-		const reason = await readErrorResponse(response);
-		throw new Error(reason);
-	}
-
-	return (await response.json()) as RuntimeSnapshot;
+	return stub.advanceCursor(params);
 }
 
 export async function recordCoordinatorSuccess(
-	stub: DurableObjectStub,
+	stub: CoordinatorStub,
 	params: { leaseToken: string; runId: string; cursor?: string },
 ): Promise<RuntimeSnapshot> {
-	const response = await stub.fetch("https://source-coordinator/state/success", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(params),
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to record coordinator success: ${response.status}`);
-	}
-
-	return (await response.json()) as RuntimeSnapshot;
+	return stub.recordSuccess(params);
 }
 
 export async function recordCoordinatorFailure(
-	stub: DurableObjectStub,
+	stub: CoordinatorStub,
 	params: { leaseToken: string; runId?: string; errorMessage: string },
 ): Promise<RuntimeSnapshot> {
-	const response = await stub.fetch("https://source-coordinator/state/failure", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(params),
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to record coordinator failure: ${response.status}`);
-	}
-
-	return (await response.json()) as RuntimeSnapshot;
+	return stub.recordFailure(params);
 }
 
-export async function getCoordinatorState(stub: DurableObjectStub): Promise<RuntimeSnapshot> {
-	const response = await stub.fetch("https://source-coordinator/state", {
-		method: "GET",
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to read coordinator state: ${response.status}`);
-	}
-
-	return (await response.json()) as RuntimeSnapshot;
+export async function unpauseCoordinator(stub: CoordinatorStub): Promise<{ unpaused: boolean; reason?: string }> {
+	return stub.unpause();
 }
 
-async function readErrorResponse(response: Response): Promise<string> {
-	const body = await response.text().catch(() => "");
-	if (body.length > 0) {
-		return body;
-	}
-
-	return `${response.status} ${response.statusText}`.trim();
+export async function getCoordinatorState(stub: CoordinatorStub): Promise<RuntimeSnapshot> {
+	return stub.getState();
 }

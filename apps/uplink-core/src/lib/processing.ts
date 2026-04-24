@@ -110,13 +110,15 @@ export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env):
 					await sendToDlq(env, message.body, classification, fallback);
 					message.ack();
 				} else if (message.attempts < 3) {
-					// Let the queue retry
+					// Let the queue retry with exponential backoff
+					const delaySeconds = Math.min(2 ** message.attempts * 5, 300);
 					console.warn(`[processQueueBatch] Transient error, will retry`, {
 						errorId,
 						attempt: message.attempts,
 						category: classification.errorCategory,
+					delaySeconds,
 					});
-					message.retry();
+					message.retry({ delaySeconds });
 				} else {
 					// Max retries exceeded, send to DLQ
 					console.error(`[processQueueBatch] Max retries exceeded, sending to DLQ`, {
@@ -179,6 +181,13 @@ export async function handleIngestMessage(env: Env, message: IngestQueueMessage)
 				() =>
 					env.RAW_BUCKET.put(rawKey, rawJson, {
 						httpMetadata: { contentType: "application/json" },
+							customMetadata: {
+								sourceId: envelope.sourceId,
+								sourceType: envelope.sourceType,
+								runId,
+								recordCount: String(envelope.records.length),
+								collectedAt: envelope.collectedAt,
+							},
 					}),
 				R2_RETRY_POLICY,
 				{

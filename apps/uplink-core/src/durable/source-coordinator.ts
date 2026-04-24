@@ -116,6 +116,9 @@ export class SourceCoordinator extends DurableObject<Env> {
 		}
 
 		const body = await request.json().catch(() => null);
+		if (!body) {
+			return new Response("Invalid JSON body", { status: 400 });
+		}
 
 		// Wrap all mutating operations in blockConcurrencyWhile for atomicity
 		return this.ctx.blockConcurrencyWhile(async () => {
@@ -149,6 +152,42 @@ export class SourceCoordinator extends DurableObject<Env> {
 				return new Response(message, { status: 500 });
 			}
 		});
+	}
+
+	// === Native DO RPC methods ===
+	// These provide type-safe, HTTP-free access to coordinator operations.
+	// Callers use: await coordinator.acquireLease(params) instead of coordinator.fetch(url, {method:'POST'})
+
+	async acquireLease(params: LeaseAcquirePayload) {
+		return this.ctx.blockConcurrencyWhile(() => this.handleAcquireLease(params));
+	}
+
+	async releaseLease(params: LeaseReleasePayload) {
+		return this.ctx.blockConcurrencyWhile(() => this.handleReleaseLease(params));
+	}
+
+	async advanceCursor(params: CursorAdvancePayload) {
+		return this.ctx.blockConcurrencyWhile(() => this.handleAdvanceCursor(params));
+	}
+
+	async recordSuccess(params: SuccessPayload) {
+		return this.ctx.blockConcurrencyWhile(() => this.handleSuccess(params));
+	}
+
+	async recordFailure(params: FailurePayload) {
+		return this.ctx.blockConcurrencyWhile(() => this.handleFailure(params));
+	}
+
+	async unpause() {
+		return this.ctx.blockConcurrencyWhile(() => this.handleUnpause());
+	}
+
+	async getState() {
+		return { ...this.snapshot, backpressure: this.getBackpressureStatus() };
+	}
+
+	async getHealth() {
+		return this.getHealthStatus();
 	}
 
 	private async handleAcquireLease(input: unknown): Promise<{
@@ -441,10 +480,8 @@ export class SourceCoordinator extends DurableObject<Env> {
 	}
 
 	private async persist(): Promise<void> {
-		await Promise.all([
-			this.ctx.storage.put(SNAPSHOT_KEY, this.snapshot),
-			this.persistBackpressure(),
-		]);
+		await this.ctx.storage.put(SNAPSHOT_KEY, this.snapshot);
+		await this.persistBackpressure();
 	}
 
 	private async persistBackpressure(): Promise<void> {

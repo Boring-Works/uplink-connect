@@ -224,6 +224,22 @@ export function toIsoNow(): string {
 	return new Date().toISOString();
 }
 
+/**
+ * Escape HTML special characters to prevent XSS in HTML templates.
+ * Handles & < > " ' and backticks for IE compatibility.
+ */
+export function escapeHtml(text: string | number | null | undefined): string {
+	if (text === null || text === undefined) return "";
+	const str = String(text);
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#039;")
+		.replace(/`/g, "&#96;");
+}
+
 export function createIngestQueueMessage(
 	envelope: IngestEnvelope,
 	options?: { requestId?: string },

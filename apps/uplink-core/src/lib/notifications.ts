@@ -92,8 +92,7 @@ export async function sendNotification(
 	}
 
 	try {
-		const id = env.NOTIFICATION_DISPATCHER.idFromName("global");
-		const dispatcher = env.NOTIFICATION_DISPATCHER.get(id);
+		const dispatcher = env.NOTIFICATION_DISPATCHER.getByName("global");
 		const result = await dispatcher.dispatch(alert, providers, routes, sourceName);
 
 		return {

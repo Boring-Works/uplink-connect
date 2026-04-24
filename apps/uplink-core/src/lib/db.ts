@@ -17,6 +17,9 @@ import { classifyError } from "./retry";
 export async function upsertSourceConfig(db: D1Database, source: SourceConfig): Promise<void> {
 	const parsed = SourceConfigSchema.parse(source);
 
+	// Invalidate cache before updating to ensure consistency
+	await invalidateSourceConfigCache(parsed.sourceId);
+
 	await db.prepare(
 		`INSERT INTO source_configs (
 			source_id, name, type, status, adapter_type, endpoint_url,
@@ -103,10 +106,40 @@ export async function upsertSourceConfig(db: D1Database, source: SourceConfig): 
 		.run();
 }
 
+const SOURCE_CONFIG_CACHE_TTL_SECONDS = 300; // 5 minutes
+
+/** Invalidate cached source config for a given sourceId */
+async function invalidateSourceConfigCache(sourceId: string): Promise<void> {
+	if (typeof caches !== "undefined") {
+		const cache = (caches as unknown as { default: Cache }).default;
+		const cacheKey = new Request(`https://internal/cache/source-config/${sourceId}`);
+		try {
+			await cache.delete(cacheKey);
+		} catch {
+			// Cache deletion failures are non-critical
+		}
+	}
+}
+
 export async function getSourceConfigWithPolicy(
 	db: D1Database,
 	sourceId: string,
 ): Promise<{ config: SourceConfig; policy: SourcePolicy } | null> {
+	// Try cache first (only in Workers runtime)
+	if (typeof caches !== "undefined") {
+		const cache = (caches as unknown as { default: Cache }).default;
+		const cacheKey = new Request(`https://internal/cache/source-config/${sourceId}`);
+		const cached = await cache.match(cacheKey);
+		if (cached) {
+			try {
+				const parsed = await cached.json() as { config: SourceConfig; policy: SourcePolicy };
+				return parsed;
+			} catch {
+				// Cache corruption, fall through to DB
+			}
+		}
+	}
+
 	const row = await db
 		.prepare(
 			`SELECT
@@ -154,6 +187,47 @@ export async function getSourceConfigWithPolicy(
 		return null;
 	}
 
+	const result = buildSourceConfigFromRow(row);
+
+	// Cache the result (only in Workers runtime)
+	if (typeof caches !== "undefined") {
+		const cache = (caches as unknown as { default: Cache }).default;
+		const cacheKey = new Request(`https://internal/cache/source-config/${sourceId}`);
+		await cache.put(
+			cacheKey,
+			new Response(JSON.stringify(result), {
+				headers: {
+					"Content-Type": "application/json",
+					"Cache-Control": `max-age=${SOURCE_CONFIG_CACHE_TTL_SECONDS}`,
+				},
+			}),
+		);
+	}
+
+	return result;
+}
+
+function buildSourceConfigFromRow(
+	row: {
+		source_id: string;
+		name: string;
+		type: string;
+		status: string;
+		adapter_type: string;
+		endpoint_url: string | null;
+		request_method: "GET" | "POST";
+		request_headers_json: string;
+		request_body: string | null;
+		metadata_json: string;
+		min_interval_seconds: number | null;
+		lease_ttl_seconds: number | null;
+		max_records_per_run: number | null;
+		retry_limit: number | null;
+		timeout_seconds: number | null;
+		alert_config_json: string | null;
+	},
+): { config: SourceConfig; policy: SourcePolicy } {
+
 	const alertConfiguration = row.alert_config_json
 		? (JSON.parse(row.alert_config_json) as SourcePolicy["alertConfiguration"])
 		: undefined;
@@ -184,6 +258,66 @@ export async function getSourceConfigWithPolicy(
 	return { config, policy };
 }
 
+
+/**
+ * Find source configs by a metadata field value using D1's native json_extract.
+ * This avoids parsing JSON in JavaScript — the filter happens in SQLite.
+ */
+const ALLOWED_METADATA_FIELDS = ["sourceType", "adapterType", "category", "tags"];
+
+export async function findSourcesByMetadataField(
+	db: D1Database,
+	field: string,
+	value: string,
+): Promise<Array<{ sourceId: string; name: string; type: string }>> {
+	if (!ALLOWED_METADATA_FIELDS.includes(field)) {
+		throw new Error(`Invalid metadata field: ${field}`);
+	}
+
+	// Use generated column for source_type if available, otherwise fall back to json_extract
+	const column = field === "sourceType" ? "source_type_generated" : `json_extract(metadata_json, '$.${field}')`;
+	const result = await db
+		.prepare(`
+			SELECT source_id, name, type
+			FROM source_configs
+			WHERE ${column} = ?
+				AND deleted_at IS NULL
+			ORDER BY name
+		`)
+		.bind(value)
+		.all<{ source_id: string; name: string; type: string }>();
+
+	return (result.results ?? []).map((row) => ({
+		sourceId: row.source_id,
+		name: row.name,
+		type: row.type,
+	}));
+}
+
+/**
+ * Get source count grouped by type using D1's native json_extract.
+ * Replaces client-side aggregation of parsed metadata.
+ */
+export async function getSourceTypeCounts(
+	db: D1Database,
+): Promise<Record<string, number>> {
+	const result = await db
+		.prepare(`
+			SELECT source_type_generated as source_type,
+			       COUNT(*) as count
+			FROM source_configs
+			WHERE deleted_at IS NULL
+			GROUP BY source_type_generated
+		`)
+		.all<{ source_type: string | null; count: number }>();
+
+	const counts: Record<string, number> = {};
+	for (const row of result.results ?? []) {
+		const key = row.source_type ?? 'unknown';
+		counts[key] = row.count;
+	}
+	return counts;
+}
 export interface PaginationParams {
 	limit?: number;
 	offset?: number;
@@ -262,6 +396,8 @@ export async function getArtifact(db: D1Database, artifactId: string): Promise<R
 }
 
 export async function softDeleteSource(db: D1Database, sourceId: string): Promise<boolean> {
+	await invalidateSourceConfigCache(sourceId);
+
 	const result = await db
 		.prepare(
 			`UPDATE source_configs
@@ -275,6 +411,8 @@ export async function softDeleteSource(db: D1Database, sourceId: string): Promis
 }
 
 export async function restoreSource(db: D1Database, sourceId: string): Promise<boolean> {
+	await invalidateSourceConfigCache(sourceId);
+
 	const result = await db
 		.prepare(
 			`UPDATE source_configs
@@ -288,12 +426,27 @@ export async function restoreSource(db: D1Database, sourceId: string): Promise<b
 }
 
 export async function permanentlyDeleteSource(db: D1Database, sourceId: string): Promise<boolean> {
-	// Delete in dependency order
-	await db.prepare("DELETE FROM source_capabilities WHERE source_id = ?").bind(sourceId).run();
-	await db.prepare("DELETE FROM source_policies WHERE source_id = ?").bind(sourceId).run();
-	await db.prepare("DELETE FROM source_runtime_snapshots WHERE source_id = ?").bind(sourceId).run();
-	const result = await db.prepare("DELETE FROM source_configs WHERE source_id = ?").bind(sourceId).run();
+	await invalidateSourceConfigCache(sourceId);
 
+	// Delete in dependency order — batched for atomicity
+	const statements = [
+		db.prepare("DELETE FROM source_capabilities WHERE source_id = ?").bind(sourceId),
+		db.prepare("DELETE FROM source_policies WHERE source_id = ?").bind(sourceId),
+		db.prepare("DELETE FROM source_runtime_snapshots WHERE source_id = ?").bind(sourceId),
+		db.prepare("DELETE FROM source_configs WHERE source_id = ?").bind(sourceId),
+	];
+
+	if (typeof db.batch === "function") {
+		const results = await db.batch(statements);
+		const lastResult = results[results.length - 1];
+		return lastResult.success && (lastResult.meta?.changes ?? 0) > 0;
+	}
+
+	// Fallback for environments without batch support
+	for (const stmt of statements.slice(0, -1)) {
+		await stmt.run();
+	}
+	const result = await statements[statements.length - 1].run();
 	return result.success && (result.meta?.changes ?? 0) > 0;
 }
 

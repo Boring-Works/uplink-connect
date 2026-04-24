@@ -1,6 +1,50 @@
 import { safeJsonParse } from "@uplink/contracts";
 import type { Env } from "../types";
 
+const METRICS_CACHE_TTL_SECONDS = 30;
+
+interface CachedMetrics<T> {
+	data: T;
+	cachedAt: number;
+}
+
+/** Cache dashboard metrics to reduce D1 load. Uses Cache API with explicit timestamp-based expiry. */
+async function getCachedMetrics<T>(cacheKey: string, fetcher: () => Promise<T>): Promise<T> {
+	if (typeof caches === "undefined") {
+		return fetcher();
+	}
+	const cache = (caches as unknown as { default: Cache }).default;
+	const key = new Request(`https://internal/cache/metrics/${cacheKey}`);
+	const cached = await cache.match(key);
+	if (cached) {
+		try {
+			const wrapper = await cached.json() as CachedMetrics<T>;
+			const ageMs = Date.now() - wrapper.cachedAt;
+			if (ageMs < METRICS_CACHE_TTL_SECONDS * 1000) {
+				return wrapper.data;
+			}
+			// expired: fall through to refresh
+		} catch {
+			// fall through
+		}
+	}
+	const result = await fetcher();
+	try {
+		await cache.put(
+			key,
+			new Response(
+				JSON.stringify({ data: result, cachedAt: Date.now() } as CachedMetrics<T>),
+				{
+					headers: { "Cache-Control": `max-age=${METRICS_CACHE_TTL_SECONDS}` },
+				},
+			),
+		);
+	} catch {
+		// cache put failures are non-critical
+	}
+	return result;
+}
+
 export interface SourceMetrics {
 	sourceId: string;
 	sourceType: string;
@@ -305,7 +349,8 @@ export async function getAllSourceMetrics(
 }
 
 export async function getQueueMetrics(db: D1Database): Promise<QueueMetrics> {
-	const now = Math.floor(Date.now() / 1000);
+	return getCachedMetrics("queue", async () => {
+		const now = Math.floor(Date.now() / 1000);
 	const since = now - 86400; // Only look at last 24h to keep queries fast
 
 	const pendingResult = await db
@@ -356,17 +401,19 @@ export async function getQueueMetrics(db: D1Database): Promise<QueueMetrics> {
 		queueLagSeconds = Math.max(0, now - receivedTime);
 	}
 
-	return {
-		oldestUnprocessedAt: oldestResult?.received_at,
-		queueLagSeconds,
-		pendingCount,
-		processingCount,
-		failedCount,
-	};
+		return {
+			oldestUnprocessedAt: oldestResult?.received_at,
+			queueLagSeconds,
+			pendingCount,
+			processingCount,
+			failedCount,
+		};
+	});
 }
 
 export async function getEntityMetrics(db: D1Database): Promise<EntityMetrics> {
-	const today = new Date().toISOString().split("T")[0];
+	return getCachedMetrics("entities", async () => {
+		const today = new Date().toISOString().split("T")[0];
 	const todayStart = `${today}T00:00:00.000Z`;
 
 	const totalResult = await db
@@ -398,22 +445,24 @@ export async function getEntityMetrics(db: D1Database): Promise<EntityMetrics> {
 		)
 		.all<{ source_id: string; count: number }>();
 
-	return {
-		totalEntities: totalResult?.count ?? 0,
-		newToday: newResult?.count ?? 0,
-		updatedToday: updatedResult?.count ?? 0,
-		bySource:
-			bySourceResult.results?.map((row) => ({
-				sourceId: row.source_id,
-				count: row.count,
-			})) ?? [],
-	};
+		return {
+			totalEntities: totalResult?.count ?? 0,
+			newToday: newResult?.count ?? 0,
+			updatedToday: updatedResult?.count ?? 0,
+			bySource:
+				bySourceResult.results?.map((row) => ({
+					sourceId: row.source_id,
+					count: row.count,
+				})) ?? [],
+		};
+	});
 }
 
 export async function getSystemMetrics(
 	db: D1Database,
 ): Promise<SystemMetrics> {
-	const since24h = Math.floor(Date.now() / 1000) - 86400;
+	return getCachedMetrics("system", async () => {
+		const since24h = Math.floor(Date.now() / 1000) - 86400;
 
 	const sourcesResult = await db
 		.prepare(
@@ -446,15 +495,16 @@ export async function getSystemMetrics(
 		)
 		.first<{ total: number; critical: number }>();
 
-	return {
-		totalSources: sourcesResult?.total ?? 0,
-		activeSources: sourcesResult?.active ?? 0,
-		totalRuns24h: runsResult?.count ?? 0,
-		totalEntities: entitiesResult?.count ?? 0,
-		queueLagSeconds: queueMetrics.queueLagSeconds,
-		activeAlerts: alertsResult?.total ?? 0,
-		criticalAlerts: alertsResult?.critical ?? 0,
-	};
+		return {
+			totalSources: sourcesResult?.total ?? 0,
+			activeSources: sourcesResult?.active ?? 0,
+			totalRuns24h: runsResult?.count ?? 0,
+			totalEntities: entitiesResult?.count ?? 0,
+			queueLagSeconds: queueMetrics.queueLagSeconds,
+			activeAlerts: alertsResult?.total ?? 0,
+			criticalAlerts: alertsResult?.critical ?? 0,
+		};
+	});
 }
 
 /**
@@ -518,14 +568,13 @@ export async function getAggregatedSourceMetrics(
 					SELECT json_group_object(trigger_type, cnt)
 					FROM (
 						SELECT
-							json_extract(r2.metadata_json, '$.triggeredBy') as trigger_type,
+							r2.triggered_by as trigger_type,
 							COUNT(*) as cnt
 						FROM ingest_runs r2
 						WHERE r2.source_id = r.source_id
 							AND r2.created_at >= ?
-							AND json_valid(r2.metadata_json)
-							AND json_extract(r2.metadata_json, '$.triggeredBy') IS NOT NULL
-						GROUP BY json_extract(r2.metadata_json, '$.triggeredBy')
+							AND r2.triggered_by IS NOT NULL
+						GROUP BY r2.triggered_by
 					)
 				) as metadata_counts
 			FROM ingest_runs r

@@ -110,17 +110,21 @@ async function triggerScheduledSources(env: Env, cron: string, ctx?: ExecutionCo
 				continue;
 			}
 
-			const doUrl = new URL("https://source-coordinator/collect");
-			doUrl.searchParams.set("sourceId", sourceId);
-			doUrl.searchParams.set("leaseToken", lease.leaseToken);
-			doUrl.searchParams.set("triggeredBy", "scheduler-cron");
-
-			// Fire-and-forget with waitUntil if available
-			const doPromise = coordinator.fetch(doUrl.toString(), { method: "POST" }).catch((err) => {
-				console.error(`[scheduler] cron trigger failed for ${sourceId}:`, err);
+			// Create workflow instance for collection (same as manual trigger)
+			const workflowPromise = env.COLLECTION_WORKFLOW.create({
+				params: {
+					sourceId,
+					leaseToken: lease.leaseToken,
+					triggeredBy: "scheduler-cron",
+					reason: `Scheduled cron: ${cron}`,
+					force: false,
+				},
+			}).catch((err) => {
+				console.error(`[scheduler] workflow creation failed for ${sourceId}:`, err);
 			});
+
 			if (ctx) {
-				ctx.waitUntil(doPromise);
+				ctx.waitUntil(workflowPromise);
 			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);

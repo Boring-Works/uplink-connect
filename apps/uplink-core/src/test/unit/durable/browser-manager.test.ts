@@ -2,6 +2,229 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { BrowserManagerDO } from "../../../durable/browser-manager";
 
 // Mock DurableObjectState
+function createMockSqlStorage() {
+	// Minimal in-memory SQL mock for BrowserManagerDO unit tests
+	const tables = new Map<string, Record<string, unknown>[]>();
+	let autoIncrement = 1;
+
+	function getTable(name: string): Record<string, unknown>[] {
+		if (!tables.has(name)) tables.set(name, []);
+		return tables.get(name)!;
+	}
+
+	function parseWhere(sql: string, params: unknown[]): ((row: Record<string, unknown>) => boolean) | null {
+		// Very simplistic WHERE parser for the queries used in BrowserManagerDO
+		if (!sql.includes("WHERE")) return null;
+		const wherePart = sql.split("WHERE")[1]?.split("ORDER BY")[0]?.split("LIMIT")[0]?.trim();
+		if (!wherePart) return null;
+
+		// Handle session_id = ?
+		const eqMatch = wherePart.match(/(\w+)\s*=\s*\?/);
+		if (eqMatch) {
+			const col = eqMatch[1];
+			let paramIdx = 0;
+			// Count ? before this match in the WHERE clause
+			const before = wherePart.slice(0, eqMatch.index);
+			paramIdx = (before.match(/\?/g) || []).length;
+			const value = params[paramIdx];
+			return (row) => row[col] === value;
+		}
+
+		// Handle status IN (?, ?)
+		const inMatch = wherePart.match(/(\w+)\s+IN\s*\(([^)]+)\)/);
+		if (inMatch) {
+			const col = inMatch[1];
+			const qCount = (inMatch[2].match(/\?/g) || []).length;
+			let paramIdx = 0;
+			const before = wherePart.slice(0, inMatch.index);
+			paramIdx = (before.match(/\?/g) || []).length;
+			const values = params.slice(paramIdx, paramIdx + qCount);
+			return (row) => values.includes(row[col]);
+		}
+
+		// Handle ? - last_used_at > ?
+		const gtMatch = wherePart.match(/\?\s*-\s*(\w+)\s*>\s*\?/);
+		if (gtMatch) {
+			const col = gtMatch[1];
+			let paramIdx = 0;
+			const before = wherePart.slice(0, gtMatch.index);
+			paramIdx = (before.match(/\?/g) || []).length;
+			const now = params[paramIdx] as number;
+			const threshold = params[paramIdx + 1] as number;
+			return (row) => (now - (row[col] as number)) > threshold;
+		}
+
+		// Handle key = 'global'
+		const literalMatch = wherePart.match(/(\w+)\s*=\s*'([^']+)'/);
+		if (literalMatch) {
+			const col = literalMatch[1];
+			const value = literalMatch[2];
+			return (row) => row[col] === value;
+		}
+
+		return null;
+	}
+
+	function parseOrderBy(sql: string): { col: string; dir: "ASC" | "DESC" } | null {
+		const match = sql.match(/ORDER BY\s+(\w+)\s*(ASC|DESC)?/i);
+		if (!match) return null;
+		return { col: match[1], dir: (match[2] as "ASC" | "DESC") ?? "ASC" };
+	}
+
+	function parseLimit(sql: string): number | null {
+		const match = sql.match(/LIMIT\s+(\?|\d+)/i);
+		if (!match) return null;
+		if (match[1] === "?") return null; // handled separately
+		return Number.parseInt(match[1], 10);
+	}
+
+	return {
+		exec: vi.fn((sql: string, ...params: unknown[]) => {
+			const upper = sql.trim().toUpperCase();
+
+			// CREATE TABLE
+			if (upper.startsWith("CREATE TABLE")) {
+				const nameMatch = sql.match(/CREATE TABLE IF NOT EXISTS\s+(\w+)/i);
+				if (nameMatch) getTable(nameMatch[1]);
+				return { one: () => null, first: () => undefined, toArray: () => [], [Symbol.iterator]: function* () {} };
+			}
+
+			// CREATE INDEX
+			if (upper.startsWith("CREATE INDEX")) {
+				return { one: () => null, first: () => undefined, toArray: () => [], [Symbol.iterator]: function* () {} };
+			}
+
+			// INSERT
+			if (upper.startsWith("INSERT")) {
+				const nameMatch = sql.match(/INTO\s+(\w+)/i);
+				const tableName = nameMatch ? nameMatch[1] : "unknown";
+				const table = getTable(tableName);
+				const colMatch = sql.match(/\(([^)]+)\)\s*VALUES/);
+				const cols = colMatch ? colMatch[1].split(",").map((c) => c.trim()) : [];
+				const row: Record<string, unknown> = {};
+				for (let i = 0; i < cols.length; i++) {
+					row[cols[i]] = params[i] ?? null;
+				}
+				if (!row.id && tableName !== "_metadata") {
+					row.id = autoIncrement++;
+				}
+				table.push(row);
+				return { one: () => row, first: () => row, toArray: () => [row], [Symbol.iterator]: function* () { yield row; } };
+			}
+
+			// SELECT
+			if (upper.startsWith("SELECT")) {
+				const fromMatch = sql.match(/FROM\s+(\w+)/i);
+				const tableName = fromMatch ? fromMatch[1] : "";
+				const table = getTable(tableName);
+				let results = [...table];
+
+				const whereFn = parseWhere(sql, params);
+				if (whereFn) results = results.filter(whereFn);
+
+				const order = parseOrderBy(sql);
+				if (order) {
+					results.sort((a, b) => {
+						const av = a[order.col];
+						const bv = b[order.col];
+						if (av === null || av === undefined) return 1;
+						if (bv === null || bv === undefined) return -1;
+						if (typeof av === "number" && typeof bv === "number") {
+							return order.dir === "DESC" ? bv - av : av - bv;
+						}
+						return order.dir === "DESC" ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
+					});
+				}
+
+				const limit = parseLimit(sql);
+				if (limit) results = results.slice(0, limit);
+
+				// Handle COUNT(*)
+				if (upper.includes("COUNT(*)")) {
+					const countRow = { c: results.length };
+					return { one: () => countRow, first: () => countRow, toArray: () => [countRow], [Symbol.iterator]: function* () { yield countRow; } };
+				}
+
+				return {
+					one: () => results[0] ?? null,
+					first: () => results[0],
+					toArray: () => results,
+					[Symbol.iterator]: function* () { yield* results; },
+				};
+			}
+
+			// UPDATE
+			if (upper.startsWith("UPDATE")) {
+				const nameMatch = sql.match(/UPDATE\s+(\w+)/i);
+				const tableName = nameMatch ? nameMatch[1] : "";
+				const table = getTable(tableName);
+				let results = [...table];
+
+				const whereFn = parseWhere(sql, params);
+				if (whereFn) results = results.filter(whereFn);
+
+				// Parse SET clauses - very simple parser
+				const setMatch = sql.match(/SET\s+(.+?)(?:WHERE|$)/i);
+				if (setMatch) {
+					const setPart = setMatch[1];
+					const setCols = setPart.split(",").map((s) => s.trim());
+					let paramIdx = 0;
+					// Count ? before SET
+					const beforeSet = sql.slice(0, sql.toUpperCase().indexOf("SET"));
+					paramIdx = (beforeSet.match(/\?/g) || []).length;
+
+					for (const row of results) {
+						for (const setCol of setCols) {
+							const colEq = setCol.match(/(\w+)\s*=\s*\?/);
+							if (colEq) {
+								row[colEq[1]] = params[paramIdx];
+								paramIdx++;
+							}
+						}
+					}
+				}
+
+				return { one: () => results[0] ?? null, first: () => results[0], toArray: () => results, [Symbol.iterator]: function* () { yield* results; } };
+			}
+
+			// DELETE
+			if (upper.startsWith("DELETE")) {
+				const nameMatch = sql.match(/FROM\s+(\w+)/i);
+				const tableName = nameMatch ? nameMatch[1] : "";
+				const table = getTable(tableName);
+				let indicesToDelete: number[] = [];
+
+				const whereFn = parseWhere(sql, params);
+				if (whereFn) {
+					indicesToDelete = table.map((row, i) => whereFn(row) ? i : -1).filter((i) => i >= 0).reverse();
+				} else if (upper.includes("WHERE")) {
+					// Subquery DELETE: DELETE FROM table WHERE id IN (SELECT id FROM table WHERE ...)
+					const subMatch = sql.match(/IN\s*\(\s*SELECT\s+\w+\s+FROM\s+\w+\s+WHERE\s+(.+?)\s*\)/i);
+					if (subMatch) {
+						const subWhere = subMatch[1];
+						// Reconstruct a simple WHERE from the subquery
+						const subSql = `SELECT * FROM ${tableName} WHERE ${subWhere}`;
+						const subWhereFn = parseWhere(subSql, params);
+						if (subWhereFn) {
+							indicesToDelete = table.map((row, i) => subWhereFn(row) ? i : -1).filter((i) => i >= 0).reverse();
+						}
+					}
+				} else {
+					indicesToDelete = table.map((_, i) => i).reverse();
+				}
+
+				for (const idx of indicesToDelete) {
+					table.splice(idx, 1);
+				}
+
+				return { one: () => null, first: () => undefined, toArray: () => [], [Symbol.iterator]: function* () {} };
+			}
+
+			return { one: () => null, first: () => undefined, toArray: () => [], [Symbol.iterator]: function* () {} };
+		}),
+	};
+}
+
 function createMockState(): DurableObjectState {
 	const storage = new Map<string, unknown>();
 	let alarmTime: number | null = null;
@@ -15,6 +238,7 @@ function createMockState(): DurableObjectState {
 			setAlarm: vi.fn(async (time: number) => { alarmTime = time; }),
 			deleteAlarm: vi.fn(async () => { alarmTime = null; }),
 			list: vi.fn(async () => storage),
+			sql: createMockSqlStorage(),
 		},
 		id: { name: "global", toString: () => "global" },
 		waitUntil: vi.fn(),

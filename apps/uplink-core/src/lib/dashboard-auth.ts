@@ -1,5 +1,6 @@
 import type { Env } from "../types";
 import { timingSafeEqual } from "./auth";
+import { escapeHtml } from "@uplink/contracts";
 
 const PASSWORD_COOKIE_NAME = "uplink_dashboard_auth";
 
@@ -246,11 +247,4 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 	return cookies;
 }
 
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#039;");
-}
+

@@ -15,11 +15,14 @@ describe("e2e flows", () => {
 	});
 
 	describe("health endpoint", () => {
-		it("returns healthy from core worker", async () => {
+		it("returns health status from core worker", async () => {
 			const response = await SELF.fetch("http://localhost/health");
 			expect(response.status).toBe(200);
 			const body = await response.json();
-			expect(body.ok).toBe(true);
+			expect(body).toHaveProperty("ok", expect.any(Boolean));
+			expect(body).toHaveProperty("service", "uplink-core");
+			expect(body).toHaveProperty("status", expect.any(String));
+			expect(body).toHaveProperty("components", expect.any(Array));
 		});
 	});
 

@@ -1,15 +1,15 @@
 # Uplink Connect - Project Status Report
 
-**Date:** April 14, 2026  
-**Version:** v0.1.1  
-**Status:** Production Ready — Live Data Flowing  
+**Date:** April 23, 2026  
+**Version:** v0.1.2  
+**Status:** Production Ready — Hardened & Audited  
 **Repository:** https://github.com/Boring-Works/uplink-connect
 
 ---
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 554 tests pass, and it is actively processing real data from a live public API source.
+Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 652 tests pass, and it is actively processing real data from a live public API source.
 
 ### Live Deployment
 - **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
@@ -33,7 +33,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **D1 Database** | ✅ Provisioned | 11 migrations applied |
+| **D1 Database** | ✅ Provisioned | 14 migrations applied |
 | **R2 Storage** | ✅ Provisioned | Raw artifacts bucket |
 | **Queues** | ✅ Active | Ingest queue + DLQ |
 | **Vectorize** | ✅ Provisioned | Entity search index |
@@ -86,17 +86,17 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Audit logging for all operations
 
 #### Testing (500+ Tests)
-- ✅ 274 core unit tests (lib modules)
-- ✅ 35 integration tests (coordinator, workflows, pipeline)
+- ✅ 292 core unit tests (lib modules, DOs, processing, retry, metrics)
+- ✅ 35 integration tests (coordinator, workflows, pipeline, replay, recovery)
 - ✅ 6 e2e tests (full flows)
 - ✅ 42 edge worker tests
 - ✅ 32 ops worker tests
 - ✅ 32 browser worker tests
-- ✅ 49 contracts tests
+- ✅ 121 contracts tests
 - ✅ 37 normalizers tests
-- ✅ 29 source-adapters tests
-- ✅ 18 live tests (production validation)
-- **Total: 554 tests across all suites**
+- ✅ 33 source-adapters tests
+- ✅ 21 live tests (production validation)
+- **Total: 652 tests across all suites**
 
 ---
 
@@ -223,7 +223,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Test Coverage | 587 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
-| Last Verified | April 14, 2026 |
+| Last Verified | April 23, 2026 |
 | Documentation | 11 files, ~3,750 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
 | CI/CD Workflows | 1 (GitHub Actions) |

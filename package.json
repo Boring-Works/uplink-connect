@@ -1,8 +1,9 @@
 {
 	"name": "uplink-connect",
 	"private": true,
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"packageManager": "pnpm@10.6.1",
+
 	"scripts": {
 		"typecheck": "pnpm -r typecheck",
 		"build": "pnpm -r build",
@@ -14,8 +15,8 @@
 		"test:watch": "pnpm --filter @uplink/core test:watch"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20260403.0",
-		"typescript": "^5.8.3",
-		"wrangler": "^4.38.0"
+		"@cloudflare/workers-types": "^4.20260424.1",
+		"typescript": "^5.9.3",
+		"wrangler": "^4.85.0"
 	}
 }
