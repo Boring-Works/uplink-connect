@@ -19,15 +19,19 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 ### 1.1 No Rate Limiting at the Edge
 **Risk:** An attacker with a valid key (or a leaked webhook URL) can flood `/v1/intake`, `/v1/files/:sourceId`, or `/v1/sources/:sourceId/trigger`, exhausting queue capacity, R2 quota, or D1 write throughput.
 
+**Status:** ✅ **ADDRESSED** — Per-IP rate limiting implemented on all POST endpoints
+
 **Evidence:**
 - `uplink-edge/src/index.ts` — all POST endpoints accept requests without any throttling
 - No Cloudflare Rate Limiting rules or WAF configuration in repo
 
-**Fix:**
-- Add per-IP and per-source rate limiting via Cloudflare Rate Limiting rules, OR
-- Implement token-bucket rate limiter using KV with keys like `ratelimit:intake:${sourceId}:${clientIP}`, window 60s, max 100 requests, return 429 with Retry-After header
+**Fix Applied (April 24):**
+- In-memory sliding window rate limiter: 100 requests per 60s per IP (`cf-connecting-ip`)
+- Returns 429 with `Retry-After` header when limit exceeded
+- Applied to `/v1/intake`, `/v1/webhooks/:sourceId`, `/v1/files/:sourceId`, `/v1/sources/:sourceId/trigger`
+- ⚠️ In-memory limiter only protects within a single Worker instance; Cloudflare Rate Limiting rules recommended for production
 
-**Priority:** P0 — DoS vector is wide open.
+**Priority:** P0 — Mitigated in code; upgrade to Cloudflare Rate Limiting rules for cross-instance protection.
 
 ---
 

@@ -30,7 +30,7 @@ All 4 UplinkConnect services have been comprehensively validated in production. 
 | Worker | Routing | Deployment ID | Status |
 |--------|---------|---------------|--------|
 | `uplink-core` | Public | `b8cc628f-e4a1-4bd0-9a64-1f62cd6da232` | ✅ Healthy |
-| `uplink-edge` | Public | `81aa2702-1832-468b-953a-1eb90844f461` | ✅ Healthy |
+| `uplink-edge` | Public | `fa32ea6a-2cc6-4a5e-86ea-5677dc1ab767` | ✅ Healthy |
 | `uplink-ops` | Internal only | `f32067e6-5868-4403-9218-0bc42e6fc4cb` | ✅ Healthy (via service binding) |
 | `uplink-browser` | Internal only | `9601c73f-da06-47ba-8a6f-1ac4c1a470ac` | ✅ Healthy (via service binding) |
 

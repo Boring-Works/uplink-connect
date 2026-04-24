@@ -199,7 +199,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | Worker | Status | Deployment ID | Routing |
 |--------|--------|---------------|---------|
 | uplink-core | ✅ Active | b8cc628f-e4a1-4bd0-9a64-1f62cd6da232 | Public (workers_dev) |
-| uplink-edge | ✅ Active | 81aa2702-1832-468b-953a-1eb90844f461 | Public (workers_dev) |
+| uplink-edge | ✅ Active | fa32ea6a-2cc6-4a5e-86ea-5677dc1ab767 | Public (workers_dev) |
 | uplink-ops | ✅ Active | f32067e6-5868-4403-9218-0bc42e6fc4cb | Internal only (workers_dev=false) |
 | uplink-browser | ✅ Active | 9601c73f-da06-47ba-8a6f-1ac4c1a470ac | Internal only (workers_dev=false) |
 
