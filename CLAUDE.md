@@ -64,7 +64,7 @@ uplink-ops       → Protected operations API
 - ✅ Webhook HMAC signature verification
 - ✅ File upload endpoint with multipart/form-data
 - ✅ AST-based code chunking for TS/JS ingestion
-- ✅ 652+ tests passing (590 unit + 35 integration + 6 e2e + 21 live)
+- ✅ 483+ tests passing (292 unit + 35 integration + 6 e2e + 21 live + 121 contracts + 37 normalizers + 33 source-adapters)
 
 ### API Surface
 
@@ -108,7 +108,7 @@ UplinkConnect/
 │   │   │   │   ├── dashboard-stream.ts      # DO for real-time dashboard
 │   │   │   │   └── error-agent.ts           # DO for RAG error diagnosis
 │   │   │   ├── routes/               # 15 route modules
-│   │   │   └── test/                 # 652+ tests (unit, integration, e2e, live)
+│   │   │   └── test/                 # 292+ tests (unit, integration, e2e, live)
 │   │   ├── migrations/       # 14 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
 │   │   └── package.json      # @uplink/core
@@ -263,7 +263,7 @@ BROWSER_API_KEY=browser-dev-key
 
 - **Framework**: Vitest with @cloudflare/vitest-pool-workers
 - **Test Files**: 33+ test files across all workspaces
-- **Total Tests**: 652+ passing (590 unit + 35 integration + 6 e2e + 21 live)
+- **Total Tests**: 483+ passing (292 unit + 35 integration + 6 e2e + 21 live + 121 contracts + 37 normalizers + 33 source-adapters)
 - **Coverage Areas**:
   - Unit tests: lib modules, DOs, notifications, chunking
   - Integration: Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert

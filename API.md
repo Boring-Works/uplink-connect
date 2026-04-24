@@ -1116,7 +1116,7 @@ Update platform settings.
 
 Password-protected HTML settings page. View and edit platform configuration as JSON. Changes are audited.
 
-**Auth:** Dashboard password cookie (configured via `DASHBOARD_PASSWORD` env or platform settings; default is `wecreate`)
+**Auth:** Dashboard password cookie (configured via `DASHBOARD_PASSWORD` secret env var)
 
 ---
 
@@ -1354,7 +1354,7 @@ Export errors in JSON, CSV, or NDJSON format.
 ## Security Notes
 
 ### Dashboard Password Protection
-The HTML dashboard pages (`/dashboard`, `/scheduler`, `/settings`, `/audit-log`) are protected by a dashboard password. The password can be set via the `DASHBOARD_PASSWORD` environment variable or in platform settings. If unset, a default password (`wecreate`) is shown on first visit. Authentication uses an HttpOnly cookie with `SameSite=Lax` and `Secure` flag on HTTPS deployments.
+The HTML dashboard pages (`/dashboard`, `/scheduler`, `/settings`, `/audit-log`) are protected by a dashboard password. The password is set via the `DASHBOARD_PASSWORD` secret environment variable. If unset, the dashboard displays a password gate with instructions. Authentication uses an HttpOnly cookie with `SameSite=Lax` and `Secure` flag on HTTPS deployments.
 
 ### Cron Expression Validation
 Schedule creation and updates validate that `cronExpression` is a standard 5-field cron string and reject forbidden characters (`;|&$<>{}[]\`) to prevent injection.

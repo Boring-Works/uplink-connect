@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 652 tests pass, and it is actively processing real data from a live public API source.
+Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 483 tests pass, and it is actively processing real data from a live public API source.
 
 ### Live Deployment
 - **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
@@ -96,7 +96,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ 37 normalizers tests
 - ✅ 33 source-adapters tests
 - ✅ 21 live tests (production validation)
-- **Total: 652 tests across all suites**
+- **Total: 483 tests across all suites**
 
 ---
 

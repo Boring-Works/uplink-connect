@@ -326,7 +326,7 @@ pnpm vitest run --config vitest.live.config.ts
 
 ### Test Coverage
 
-**652+ tests** across unit, integration, e2e, live, worker, and package test suites.
+**483+ tests** across unit, integration, e2e, live, worker, and package test suites.
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|
