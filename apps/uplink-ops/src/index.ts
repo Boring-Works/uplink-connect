@@ -176,10 +176,17 @@ app.get("/v1/audit-log", async (c) => {
 });
 
 async function proxyToCore(env: Env, path: string, init?: RequestInit): Promise<Response> {
+	if (!env.CORE_INTERNAL_KEY) {
+		return new Response(JSON.stringify({ error: "CORE_INTERNAL_KEY not configured" }), {
+			status: 500,
+			headers: { "content-type": "application/json" },
+		});
+	}
+
 	const request = new Request(`https://uplink-core${path}`, {
 		method: init?.method ?? "GET",
 		headers: {
-			"x-uplink-internal-key": env.CORE_INTERNAL_KEY ?? "",
+			"x-uplink-internal-key": env.CORE_INTERNAL_KEY,
 			...(init?.headers ?? {}),
 		},
 		body: init?.body,

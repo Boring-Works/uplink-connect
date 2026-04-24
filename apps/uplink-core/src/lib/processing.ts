@@ -107,7 +107,14 @@ export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env):
 						errorId,
 						category: classification.errorCategory,
 					});
-					await sendToDlq(env, message.body, classification, fallback);
+					try {
+						await sendToDlq(env, message.body, classification, fallback);
+					} catch (dlqErr) {
+						console.error(`[processQueueBatch] DLQ send failed, acking to prevent loop`, {
+							errorId,
+							dlqError: dlqErr instanceof Error ? dlqErr.message : String(dlqErr),
+						});
+					}
 					message.ack();
 				} else if (message.attempts < 3) {
 					// Let the queue retry with exponential backoff
@@ -116,7 +123,7 @@ export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env):
 						errorId,
 						attempt: message.attempts,
 						category: classification.errorCategory,
-					delaySeconds,
+						delaySeconds,
 					});
 					message.retry({ delaySeconds });
 				} else {
@@ -125,7 +132,14 @@ export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env):
 						errorId,
 						attempts: message.attempts,
 					});
-					await sendToDlq(env, message.body, classification, fallback);
+					try {
+						await sendToDlq(env, message.body, classification, fallback);
+					} catch (dlqErr) {
+						console.error(`[processQueueBatch] DLQ send failed, acking to prevent loop`, {
+							errorId,
+							dlqError: dlqErr instanceof Error ? dlqErr.message : String(dlqErr),
+						});
+					}
 					message.ack();
 				}
 			}

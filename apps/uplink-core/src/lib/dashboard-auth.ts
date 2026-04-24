@@ -153,29 +153,32 @@ export async function ensureDashboardAuth(
 		}
 	}
 
-	// Check for form submission via POST body
+	// Check for form submission via POST body (only when Content-Type is form-like)
 	let passwordIncorrect = false;
 	if (request.method === "POST") {
-		try {
-			const formData = await request.formData();
-			const submittedPassword = formData.get("password")?.toString() ?? "";
-			if (submittedPassword) {
-				const submittedHash = await hashPassword(submittedPassword);
-				if (timingSafeEqual(submittedHash, hash)) {
-					// Set signed token cookie and redirect
-					const token = await signToken(hash, Date.now());
-					const headers = new Headers();
-					headers.set(
-						"Set-Cookie",
-						`${PASSWORD_COOKIE_NAME}=${token}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${request.url.startsWith("https:") ? "; Secure" : ""}`,
-					);
-					headers.set("Location", options.returnPath);
-					return new Response(null, { status: 302, headers });
+		const contentType = request.headers.get("content-type") ?? "";
+		if (contentType.includes("multipart/form-data") || contentType.includes("application/x-www-form-urlencoded")) {
+			try {
+				const formData = await request.formData();
+				const submittedPassword = formData.get("password")?.toString() ?? "";
+				if (submittedPassword) {
+					const submittedHash = await hashPassword(submittedPassword);
+					if (timingSafeEqual(submittedHash, hash)) {
+						// Set signed token cookie and redirect
+						const token = await signToken(hash, Date.now());
+						const headers = new Headers();
+						headers.set(
+							"Set-Cookie",
+							`${PASSWORD_COOKIE_NAME}=${token}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax${request.url.startsWith("https:") ? "; Secure" : ""}`,
+						);
+						headers.set("Location", options.returnPath);
+						return new Response(null, { status: 302, headers });
+					}
+					passwordIncorrect = true;
 				}
-				passwordIncorrect = true;
+			} catch {
+				// Invalid form data, fall through to gate
 			}
-		} catch {
-			// Invalid form data, fall through to gate
 		}
 	}
 
