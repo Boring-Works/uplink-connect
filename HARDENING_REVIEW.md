@@ -51,19 +51,18 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 ### 1.3 WebSocket DOs Are Unauthenticated
 **Risk:** Anyone can connect to `/internal/stream/dashboard` and `/internal/agent/error`. The error agent consumes Workers AI credits per connection. An attacker could exhaust the AI budget.
 
+**Status:** ✅ **FIXED** — Already protected by `/internal/*` auth middleware; added defense-in-depth explicit checks in route handlers
+
 **Evidence:**
 - `dashboard-stream.ts:29-47` — accepts WebSocket upgrade without any auth check
 - `error-agent.ts:36-51` — same, no auth gate before accepting connection
 
-**Fix:** Add internal key check before WebSocket upgrade in both DOs:
-```typescript
-const authHeader = request.headers.get("x-uplink-internal-key");
-if (!authHeader || !timingSafeEqual(authHeader, env.CORE_INTERNAL_KEY)) {
-  return new Response("Unauthorized", { status: 401 });
-}
-```
+**Fix Applied (April 24):**
+- `routes/agents.ts` — Added `ensureInternalAuth()` check before proxying to DOs
+- `index.ts` — `/internal/*` middleware already requires `x-uplink-internal-key`
+- Verified: 401 returned without auth header, 401 with wrong key
 
-**Priority:** P0 — Unauthenticated access to cost-bearing AI endpoints.
+**Priority:** P0 — Resolved.
 
 ---
 
@@ -89,48 +88,44 @@ if (!authHeader || !timingSafeEqual(authHeader, env.CORE_INTERNAL_KEY)) {
 ### 1.5 Collection Workflow Allows SSRF
 **Risk:** A source configured with `endpointUrl` pointing to `http://169.254.169.254/latest/meta-data/` or internal Cloudflare services could leak metadata or attack infrastructure.
 
+**Status:** ✅ **FIXED** — URL validation enforced before all collection fetches
+
 **Evidence:**
 - `collection-workflow.ts:54-57` — `fetchFn` passes URL directly to `fetch()` without validation
 - No URL scheme restriction (allows `file://`, `ftp://`)
 - No private IP range blocking
 
-**Fix:**
-```typescript
-function validateSourceUrl(url: string): boolean {
-  const parsed = new URL(url);
-  if (!["http:", "https:"].includes(parsed.protocol)) return false;
-  const hostname = parsed.hostname.toLowerCase();
-  // Block private IPs, localhost, metadata services
-  if (hostname === "localhost" || hostname.endsWith(".local")) return false;
-  if (/^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.)/.test(hostname)) return false;
-  if (hostname === "169.254.169.254") return false; // AWS/Cloud metadata
-  return true;
-}
-```
+**Fix Applied (April 24):**
+- `lib/url-validation.ts` — New `isAllowedSourceUrl()` function blocks:
+  - Non-http(s) protocols
+  - localhost, *.local
+  - Private IPv4 ranges (127.x, 10.x, 172.16-31.x, 192.168.x, 169.254.x)
+  - IPv6 loopback (::1) and link-local (fe80:)
+  - AWS metadata service (169.254.169.254)
+- `collection-workflow.ts` — Validates `endpointUrl` before `adapter.collect()`; throws `SSRF_BLOCKED` error if invalid
 
-**Priority:** P0 — Internal network access from workflow context.
+**Priority:** P0 — Resolved.
 
 ---
 
 ### 1.6 No CORS / Security Headers on Public Endpoints
 **Risk:** Dashboard and API endpoints lack security headers. The dashboard HTML is vulnerable to clickjacking.
 
+**Status:** ✅ **FIXED** — Security headers middleware added to all responses
+
 **Evidence:**
 - No `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, or `Referrer-Policy` headers
 - Dashboard HTML loads external fonts from Google Fonts without CSP
 
-**Fix:** Add Hono middleware:
-```typescript
-app.use("*", async (c, next) => {
-  await next();
-  c.header("X-Content-Type-Options", "nosniff");
-  c.header("X-Frame-Options", "DENY");
-  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
-  c.header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src fonts.gstatic.com; script-src 'none'; connect-src 'self' wss:;");
-});
-```
+**Fix Applied (April 24):**
+- `index.ts` — Added global `app.use("*", ...)` middleware setting:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src fonts.gstatic.com; script-src 'none'; connect-src 'self' wss:`
+- Verified: All headers present on `/health` response
 
-**Priority:** P1 — XSS/clickjacking mitigation.
+**Priority:** P1 — Resolved.
 
 ---
 

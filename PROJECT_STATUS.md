@@ -198,7 +198,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 ### Workers Deployed
 | Worker | Status | Deployment ID | Routing |
 |--------|--------|---------------|---------|
-| uplink-core | ✅ Active | d340c4ac-597a-417f-b1f4-81d633feed54 | Public (workers_dev) |
+| uplink-core | ✅ Active | b8cc628f-e4a1-4bd0-9a64-1f62cd6da232 | Public (workers_dev) |
 | uplink-edge | ✅ Active | 81aa2702-1832-468b-953a-1eb90844f461 | Public (workers_dev) |
 | uplink-ops | ✅ Active | f32067e6-5868-4403-9218-0bc42e6fc4cb | Internal only (workers_dev=false) |
 | uplink-browser | ✅ Active | 9601c73f-da06-47ba-8a6f-1ac4c1a470ac | Internal only (workers_dev=false) |
@@ -340,6 +340,21 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 **Status:** ✅ PRODUCTION READY — LIVE VALIDATED
 
 ---
+
+## Recent Changes (April 24, 2026)
+
+### Security Hardening
+- **WebSocket endpoint auth** — Explicit `ensureInternalAuth()` checks on `/internal/stream/dashboard` and `/internal/agent/error` (defense-in-depth; already protected by `/internal/*` middleware)
+- **Security headers middleware** — Global CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy on all responses
+- **SSRF protection** — `isAllowedSourceUrl()` validates all collection endpoint URLs before fetch; blocks private IPs, localhost, metadata services, non-HTTP(S) protocols
+
+### Production Validation & Hardening
+- **Dashboard auth body parsing fix** - Only parses form data when Content-Type is `multipart/form-data` or `application/x-www-form-urlencoded`; prevents JSON POSTs from causing 401 loops
+- **DLQ error resilience** - Wrapped `sendToDlq()` calls in try/catch to prevent infinite retry loops if DLQ itself fails
+- **Ops proxy auth hardening** - Added missing `CORE_INTERNAL_KEY` check in `proxyToCore()`; fails closed with 500 instead of proxying unauthenticated requests
+- **Smoke test fixes** - Updated URLs from `boringworks.workers.dev` to `codyboring.workers.dev`; added handling for 404 responses from internal-only workers
+- **Live endpoint verification** - All health checks, auth endpoints, and dashboard verified against production deployment
+- **D1 state verification** - 4 active sources, 11 total runs (historical test data), 5 dead_letter errors from pre-validation test runs
 
 ## Recent Changes (April 14, 2026)
 

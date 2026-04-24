@@ -29,7 +29,7 @@ All 4 UplinkConnect services have been comprehensively validated in production. 
 
 | Worker | Routing | Deployment ID | Status |
 |--------|---------|---------------|--------|
-| `uplink-core` | Public | `d340c4ac-597a-417f-b1f4-81d633feed54` | ✅ Healthy |
+| `uplink-core` | Public | `b8cc628f-e4a1-4bd0-9a64-1f62cd6da232` | ✅ Healthy |
 | `uplink-edge` | Public | `81aa2702-1832-468b-953a-1eb90844f461` | ✅ Healthy |
 | `uplink-ops` | Internal only | `f32067e6-5868-4403-9218-0bc42e6fc4cb` | ✅ Healthy (via service binding) |
 | `uplink-browser` | Internal only | `9601c73f-da06-47ba-8a6f-1ac4c1a470ac` | ✅ Healthy (via service binding) |
@@ -245,6 +245,31 @@ async function proxyToCore(env: Env, path: string, init?: RequestInit): Promise<
 4. **0 schedules configured** — Sources exist but no cron schedules are set. The dynamic scheduler is ready; schedules can be configured via the dashboard or API.
 
 5. **Live e2e tests skipped** — 15 tests require `UPLINK_LIVE_*` environment credentials which are not set in the CI environment.
+
+---
+
+## Post-Validation Security Hardening (April 24)
+
+Additional P0 security gaps identified in HARDENING_REVIEW.md were closed after initial validation:
+
+### WebSocket Endpoint Auth (Defense-in-Depth)
+- Added explicit `ensureInternalAuth()` checks in `routes/agents.ts` before proxying to DOs
+- Endpoints already protected by `/internal/*` middleware; explicit checks provide defense-in-depth
+- Status: ✅ Deployed, verified 401 without auth
+
+### Security Headers
+- Added global Hono middleware to `index.ts` setting:
+  - `Content-Security-Policy`
+  - `X-Frame-Options: DENY`
+  - `X-Content-Type-Options: nosniff`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+- Status: ✅ Deployed, verified on `/health` response
+
+### SSRF Protection
+- New `lib/url-validation.ts` with `isAllowedSourceUrl()` function
+- Blocks: private IPs, localhost, metadata services, non-HTTP(S) protocols
+- Integrated into `collection-workflow.ts` before `adapter.collect()`
+- Status: ✅ Deployed
 
 ---
 
