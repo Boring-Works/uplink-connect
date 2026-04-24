@@ -29,8 +29,8 @@ All 4 UplinkConnect services have been comprehensively validated in production. 
 
 | Worker | Routing | Deployment ID | Status |
 |--------|---------|---------------|--------|
-| `uplink-core` | Public | `b8cc628f-e4a1-4bd0-9a64-1f62cd6da232` | ✅ Healthy |
-| `uplink-edge` | Public | `fa32ea6a-2cc6-4a5e-86ea-5677dc1ab767` | ✅ Healthy |
+| `uplink-core` | Public | `a2cf0ef8-e677-49a4-8b85-994aaebdb23c` | ✅ Healthy |
+| `uplink-edge` | Public | `65aa2b08-afd4-4938-aacb-f1dd7674e7a7` | ✅ Healthy |
 | `uplink-ops` | Internal only | `f32067e6-5868-4403-9218-0bc42e6fc4cb` | ✅ Healthy (via service binding) |
 | `uplink-browser` | Internal only | `9601c73f-da06-47ba-8a6f-1ac4c1a470ac` | ✅ Healthy (via service binding) |
 
@@ -269,6 +269,19 @@ Additional P0 security gaps identified in HARDENING_REVIEW.md were closed after 
 - New `lib/url-validation.ts` with `isAllowedSourceUrl()` function
 - Blocks: private IPs, localhost, metadata services, non-HTTP(S) protocols
 - Integrated into `collection-workflow.ts` before `adapter.collect()`
+- Status: ✅ Deployed
+
+### Dashboard Cookie Auth for Internal Endpoints
+- `lib/auth.ts` — New `ensureInternalOrDashboardAuth()` function
+- `/internal/*` middleware now accepts either:
+  - `x-uplink-internal-key` header (service-to-service)
+  - `uplink_dashboard_auth` cookie (dashboard session)
+- Fixes dashboard interactive features (trigger, replay, retry, ack, resolve)
+- Status: ✅ Deployed
+
+### Edge Rate Limiter Memory Leak Fix
+- Added periodic cleanup of expired entries when store size exceeds 1000
+- Prevents unbounded Map growth from stale IP entries
 - Status: ✅ Deployed
 
 ---

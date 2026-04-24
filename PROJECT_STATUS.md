@@ -198,8 +198,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 ### Workers Deployed
 | Worker | Status | Deployment ID | Routing |
 |--------|--------|---------------|---------|
-| uplink-core | ✅ Active | b8cc628f-e4a1-4bd0-9a64-1f62cd6da232 | Public (workers_dev) |
-| uplink-edge | ✅ Active | fa32ea6a-2cc6-4a5e-86ea-5677dc1ab767 | Public (workers_dev) |
+| uplink-core | ✅ Active | a2cf0ef8-e677-49a4-8b85-994aaebdb23c | Public (workers_dev) |
+| uplink-edge | ✅ Active | 65aa2b08-afd4-4938-aacb-f1dd7674e7a7 | Public (workers_dev) |
 | uplink-ops | ✅ Active | f32067e6-5868-4403-9218-0bc42e6fc4cb | Internal only (workers_dev=false) |
 | uplink-browser | ✅ Active | 9601c73f-da06-47ba-8a6f-1ac4c1a470ac | Internal only (workers_dev=false) |
 
@@ -347,6 +347,8 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 - **WebSocket endpoint auth** — Explicit `ensureInternalAuth()` checks on `/internal/stream/dashboard` and `/internal/agent/error` (defense-in-depth; already protected by `/internal/*` middleware)
 - **Security headers middleware** — Global CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy on all responses
 - **SSRF protection** — `isAllowedSourceUrl()` validates all collection endpoint URLs before fetch; blocks private IPs, localhost, metadata services, non-HTTP(S) protocols
+- **Dashboard cookie auth for internal endpoints** — `/internal/*` now accepts either `x-uplink-internal-key` header or `uplink_dashboard_auth` cookie; fixes dashboard interactive features
+- **Edge rate limiter memory leak fix** — Periodic cleanup of expired entries when store exceeds 1000 IPs
 
 ### Production Validation & Hardening
 - **Dashboard auth body parsing fix** - Only parses form data when Content-Type is `multipart/form-data` or `application/x-www-form-urlencoded`; prevents JSON POSTs from causing 401 loops
