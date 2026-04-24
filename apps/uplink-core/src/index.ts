@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "./types";
-import { ensureInternalAuth } from "./lib/auth";
+import { ensureInternalAuth, ensureInternalOrDashboardAuth } from "./lib/auth";
 import { processQueueBatch } from "./lib/processing";
 import { getEnabledSchedulesByCron } from "./lib/scheduler";
 import { getCoordinatorStub, acquireLease } from "./lib/coordinator-client";
@@ -43,9 +43,9 @@ app.use("*", async (c, next) => {
 // Health (no auth)
 app.route("/", healthRoutes);
 
-// Internal auth middleware
+// Internal auth middleware — allows internal key or valid dashboard session
 app.use("/internal/*", async (c, next) => {
-	const authFailure = ensureInternalAuth(c);
+	const authFailure = await ensureInternalOrDashboardAuth(c);
 	if (authFailure) {
 		return authFailure;
 	}

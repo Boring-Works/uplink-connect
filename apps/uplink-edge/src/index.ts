@@ -44,6 +44,16 @@ function checkRateLimit(clientIP: string): { allowed: boolean; retryAfter?: numb
 	}
 
 	entry.count++;
+
+	// Periodic cleanup of expired entries to prevent memory leak
+	if (rateLimitStore.size > 1000) {
+		for (const [ip, data] of rateLimitStore) {
+			if (now - data.windowStart > RATE_LIMIT_WINDOW_MS) {
+				rateLimitStore.delete(ip);
+			}
+		}
+	}
+
 	return { allowed: true };
 }
 
