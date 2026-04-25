@@ -327,13 +327,13 @@ pnpm vitest run --config vitest.live.config.ts
 
 ### Test Coverage
 
-**706+ tests** across unit, integration, e2e, live, worker, and package test suites.
+**720 tests** across unit, integration, e2e, live, worker, and package test suites.
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|
-| **Unit tests** | 346 | lib modules, DOs, notifications, chunking, auth, alerting |
+| **Unit tests** | 346 | lib modules, DOs, notifications, chunking, auth, alerting, logging, retry |
 | **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery |
-| **E2E tests** | 6 | Full flows: health, dashboard, ingest, replay, browser |
+| **E2E tests** | 20 | Full flows: health, dashboard, ingest, replay, browser, UI pages, auth, WebSocket |
 | **Live tests** | 21 | Production endpoint validation |
 | **Worker tests** | 107 | edge (42), ops (32), browser (33) |
 | **Contracts tests** | 121 | Zod schemas, utilities, sanitization, HTTP classification |

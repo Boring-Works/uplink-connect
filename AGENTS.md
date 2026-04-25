@@ -150,7 +150,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Testing
 - Vitest with @cloudflare/vitest-pool-workers
-- 706+ tests across unit, integration, e2e, live, contracts, normalizers, source-adapters
+- 720 tests across unit, integration, e2e, live, contracts, normalizers, source-adapters, Playwright visual regression
 - Tests run in actual Workers runtime
 
 ---
@@ -302,4 +302,4 @@ pnpm vitest run --config vitest.live.config.ts
 
 ## Last Updated
 
-April 24, 2026 - v0.1.2 with SDK-native standards audit complete, ULID migration (52 instances), file upload streaming, all 706 tests passing
+April 25, 2026 - v0.1.2 deployed to Cloudflare with WebSocket auth fix, loading states, mobile overflow fix, all 720 tests passing
