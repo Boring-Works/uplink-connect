@@ -150,7 +150,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Testing
 - Vitest with @cloudflare/vitest-pool-workers
-- 720 tests across unit, integration, e2e, live, contracts, normalizers, source-adapters, Playwright visual regression
+- 720 tests across unit (346), integration (35), e2e (20), live (21), edge (42), ops (32), browser (33), contracts (121), normalizers (37), source-adapters (33), Playwright visual regression (36)
 - Tests run in actual Workers runtime
 
 ---
@@ -302,4 +302,4 @@ pnpm vitest run --config vitest.live.config.ts
 
 ## Last Updated
 
-April 25, 2026 - v0.1.2 deployed to Cloudflare with WebSocket auth fix, loading states, mobile overflow fix, all 720 tests passing
+April 25, 2026 - v0.1.2 deployed to Cloudflare with WebSocket auth fix, loading states, mobile overflow fix, file upload cross-realm fix, all 720 tests passing, dashboard password set

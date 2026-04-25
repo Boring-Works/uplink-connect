@@ -2,7 +2,7 @@
 
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
-[![Tests](https://img.shields.io/badge/tests-706%2B%20passing-success)](./apps/uplink-core/src/test)
+[![Tests](https://img.shields.io/badge/tests-720%20passing-success)](./apps/uplink-core/src/test)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -28,7 +28,7 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Universal notifications**: 8 providers including Slack, Discord, PagerDuty, Teams
 - **Code intelligence**: AST-based chunking for TS/JS file ingestion
 - **Live public data sources**: 5 diverse APIs available via setup script (USGS earthquakes, GitHub events, Hacker News, exchange rates, NWS weather)
-- **Production validated**: All endpoints verified, auth hardened, DLQ resilient, SDK-native compliant — see `PRODUCTION_VALIDATION_REPORT.md`
+- **Production validated**: All endpoints verified, auth hardened, DLQ resilient, SDK-native compliant — see `WHAT_WE_BUILT.md`
 - **SDK-native standards**: ULIDs via `ulidx`, streaming uploads, `AbortSignal.any()`, `timingSafeEqual` everywhere
 
 ## Architecture
@@ -327,13 +327,13 @@ pnpm vitest run --config vitest.live.config.ts
 
 ### Test Coverage
 
-**720 tests** across unit, integration, e2e, live, worker, and package test suites.
+**720 tests** across unit, integration, e2e, live, worker, package, and Playwright visual regression suites.
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|
 | **Unit tests** | 346 | lib modules, DOs, notifications, chunking, auth, alerting, logging, retry |
 | **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery |
-| **E2E tests** | 20 | Full flows: health, dashboard, ingest, replay, browser, UI pages, auth, WebSocket |
+| **E2E tests** | 20 | Full flows: dashboard, scheduler, settings, audit-log, auth, WebSocket |
 | **Live tests** | 21 | Production endpoint validation |
 | **Worker tests** | 107 | edge (42), ops (32), browser (33) |
 | **Contracts tests** | 121 | Zod schemas, utilities, sanitization, HTTP classification |
@@ -441,6 +441,55 @@ pnpm vitest run --config vitest.live.config.ts
 - [ ] Check R2 objects created
 - [ ] Confirm queue consumption working
 - [ ] Set up logpush or tail workers if needed
+
+## Current System State
+
+### What Is Active
+
+| Capability | Status |
+|------------|--------|
+| API intake (`/v1/intake`) | ✅ Live |
+| Webhook receiver with HMAC | ✅ Live |
+| File upload (multipart, streaming >5MB) | ✅ Live |
+| Manual source trigger | ✅ Live |
+| Queue processing with DLQ | ✅ Live |
+| Durable Object coordination (5 DOs) | ✅ Live |
+| DO SQL API persistence (3 DOs) | ✅ Live |
+| Workflow-driven collection | ✅ Live |
+| Entity normalization + deduplication | ✅ Live |
+| Vectorize semantic search | ✅ Live |
+| Analytics Engine metrics | ✅ Live |
+| HTML dashboard with WebSocket | ✅ Live |
+| Scheduler UI with cron | ✅ Live |
+| Settings UI with audit log | ✅ Live |
+| RAG error diagnosis agent | ✅ Live |
+| Data export (JSON/CSV/NDJSON) | ✅ Live |
+| 8-channel notification system | ✅ Live |
+| Deep health checks | ✅ Live |
+| Security headers (CSP/X-Frame/X-Content-Type) | ✅ Live |
+| SSRF protection | ✅ Live |
+| Rate limiting (in-memory) | ✅ Live |
+
+### What Is Ready But Not Active
+
+| Capability | Status | How to Activate |
+|------------|--------|---------------|
+| Browser Rendering API | 🔌 Bound but unused | Replace `fetch()` with `env.BROWSER.fetch()` |
+| Analytics Pipeline | 🔌 Code ready, no binding | Add `ANALYTICS_PIPELINE` to wrangler.jsonc |
+| Email notifications | 🔌 Code ready, needs routing | Enable Email Routing in Cloudflare dashboard |
+| Scheduled auto-triggers | 🔌 Dynamic scheduler ready | Add schedules via `/scheduler`, set `enabled=1` |
+
+### What Is Deferred
+
+| Capability | Status | Path Forward |
+|------------|--------|--------------|
+| PBKDF2 password hashing | ⚠️ SHA-256 today | Migrate `hashPassword()` to PBKDF2 |
+| Cross-instance rate limiting | ⚠️ In-memory only | Add Cloudflare Rate Limiting rules |
+| CORS preflight | ❌ Not built | Add `app.options()` handlers |
+| GraphQL API | ❌ Not built | Add GraphQL layer over D1 |
+| Multi-region | ❌ Not built | Enable D1 read replication |
+| Streaming exports | ❌ Not built | Use `ReadableStream` for large datasets |
+| Batch embeddings | ❌ Not built | Pass text arrays to `AI.run()` |
 
 ## Data Model
 

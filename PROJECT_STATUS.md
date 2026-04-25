@@ -1,6 +1,6 @@
 # Uplink Connect - Project Status Report
 
-**Date:** April 24, 2026  
+**Date:** April 25, 2026  
 **Version:** v0.1.2  
 **Status:** Production Ready — Hardened, Audited, Validated & SDK-Native Compliant  
 **Repository:** https://github.com/Boring-Works/uplink-connect
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 706 tests pass, and it is actively processing real data from 4 live public API sources.
+Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 720 tests pass, and it is actively processing real data from 4 live public API sources.
 
 ### Live Deployment
 - **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
@@ -85,10 +85,10 @@ Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion 
 - ✅ Source soft-delete with retention
 - ✅ Audit logging for all operations
 
-#### Testing (706+ Tests)
-- ✅ 292 core unit tests (lib modules, DOs, processing, retry, metrics)
+#### Testing (720 Tests)
+- ✅ 279 core unit tests (lib modules, DOs, processing, retry, metrics, logging)
 - ✅ 35 integration tests (coordinator, workflows, pipeline, replay, recovery)
-- ✅ 6 e2e tests (full flows)
+- ✅ 20 e2e tests (dashboard, scheduler, settings, audit-log, auth, WebSocket)
 - ✅ 42 edge worker tests
 - ✅ 32 ops worker tests
 - ✅ 33 browser worker tests
@@ -96,7 +96,8 @@ Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion 
 - ✅ 37 normalizers tests
 - ✅ 33 source-adapters tests
 - ✅ 21 live tests (production validation)
-- **Total: 706 tests across all suites**
+- ✅ 36 Playwright tests (cross-browser visual regression)
+- **Total: 720 tests across all suites**
 
 ---
 
@@ -228,7 +229,7 @@ Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion 
 | Test Coverage | 706 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
-| Secrets Configured | CORE_INTERNAL_KEY, INGEST_API_KEY, BROWSER_API_KEY, DASHBOARD_PASSWORD |
+| Secrets Configured | CORE_INTERNAL_KEY, INGEST_API_KEY, BROWSER_API_KEY, DASHBOARD_PASSWORD, OPS_API_KEY |
 | Last Verified | April 24, 2026 |
 | Documentation | 11 files, ~3,750 lines |
 | OpenAPI Spec | 1 file, ~500 lines |
@@ -240,7 +241,7 @@ Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion 
 - ✅ No debugger statements
 - ✅ Strict TypeScript enabled
 - ✅ All type checks pass
-- ✅ All tests pass (706)
+- ✅ All tests pass (720)
 - ✅ Biome linting clean
 - ✅ All 4 workers deployed and healthy
 - ✅ Smoke test passes (9/9)
@@ -252,6 +253,9 @@ Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion 
 - ✅ CI/CD pipeline configured
 - ✅ Synthetic monitoring active
 - ✅ 5 Durable Objects (3 SQL-backed: BrowserManagerDO, ErrorAgentDO, NotificationDispatcher; 2 KV-backed: SourceCoordinator, DashboardStreamDO)
+- ✅ Playwright visual regression tests pass across 3 viewports
+- ✅ Cross-environment test fixes applied (undici FormData, DOMException AbortError)
+- ✅ Edge worker file upload uses duck-type File check for cross-realm compatibility
 - ✅ WebSocket hibernation for real-time features
 - ✅ DO alarms replace setInterval in all DOs
 - ✅ Constant-time auth comparisons across all workers

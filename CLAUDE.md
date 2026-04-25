@@ -65,7 +65,7 @@ uplink-ops       → Protected operations API
 - ✅ Webhook HMAC signature verification
 - ✅ File upload endpoint with multipart/form-data
 - ✅ AST-based code chunking for TS/JS ingestion
-- ✅ 720 tests passing (346 core unit + 35 integration + 20 e2e + 21 live + 42 edge + 32 ops + 33 browser + 121 contracts + 37 normalizers + 33 source-adapters)
+- ✅ 720 tests passing (346 core unit + 35 integration + 20 e2e + 21 live + 42 edge + 32 ops + 33 browser + 121 contracts + 37 normalizers + 33 source-adapters + 36 Playwright)
 
 ### API Surface
 

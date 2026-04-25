@@ -1,6 +1,6 @@
 # Uplink Connect v0.1.2 — Hardening & Improvement Review
 
-**Date:** 2026-04-23
+**Date:** 2026-04-25
 **Scope:** Security, reliability, performance, observability, and maintainability
 **Status:** Production-hardened baseline with actionable next steps
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Uplink Connect v0.1.2 is a **production-hardened, Cloudflare-native data ingestion platform** with 706+ passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 23-24 hardening pass and identifies **remaining gaps** for future iterations.
+Uplink Connect v0.1.2 is a **production-hardened, Cloudflare-native data ingestion platform** with 720 passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 23-24 hardening pass and identifies **remaining gaps** for future iterations.
 
 **Bottom line:** The platform is safe for current usage. The items below are about resilience under abuse, cost protection at scale, and operational confidence.
 
