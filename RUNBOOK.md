@@ -1,6 +1,6 @@
 # Uplink Connect - Daily Operations Runbook
 
-**Version:** 0.2.3
+**Version:** 0.1.2
 **Last Updated:** 2026-04-24
 **For:** Daily production operations
 

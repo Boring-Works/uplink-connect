@@ -1,4 +1,4 @@
-# Uplink Connect v3.01 - Comprehensive Audit Report
+# Uplink Connect v0.1.2 - Comprehensive Audit Report
 
 **Date:** 2026-04-24
 **Version:** 0.1.2
@@ -8,12 +8,12 @@
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion platform. This audit validates that the implementation aligns with the external architecture plan and Cloudflare's 2026 platform recommendations.
+Uplink Connect v0.1.2 is a **production-ready** Cloudflare-native data ingestion platform. This audit validates that the implementation aligns with the external architecture plan and Cloudflare's 2026 platform recommendations.
 
 ### Audit Results: ✅ PASSED
 
 - **Type Safety:** All 7 workspace packages pass TypeScript strict mode
-- **Test Coverage:** 483 tests passing across all suites (core 292 + contracts 121 + normalizers 37 + source-adapters 33)
+- **Test Coverage:** 706 tests passing across all suites (core 292 + contracts 121 + normalizers 37 + source-adapters 33)
 - **Architecture Alignment:** 98%+ match with external v3.01 plan
 - **Code Quality:** Consistent patterns, proper error handling, comprehensive logging
 - **Live Deployment:** All workers deployed and healthy
@@ -32,7 +32,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | **Durable Objects** | Per-source coordination, leases, cursors | ✅ 5 DOs: SourceCoordinator, BrowserManagerDO, NotificationDispatcher, DashboardStreamDO, ErrorAgentDO | ✅ Aligned |
 | **Queues** | At-least-once buffering, backpressure | ✅ Ingest queue with DLQ, batch processing | ✅ Aligned |
 | **Workflows** | Multi-step collection, retries | ✅ CollectionWorkflow + RetentionWorkflow | ✅ Aligned |
-| **D1** | Operational relational data | ✅ 14 migrations, 18 tables | ✅ Aligned |
+| **D1** | Operational relational data | ✅ 14 migrations, 23 tables | ✅ Aligned |
 | **R2** | Immutable raw artifacts | ✅ Raw bucket with key structure | ✅ Aligned |
 | **Analytics Engine** | High-cardinality metrics | ✅ Full metrics library + synthetic monitoring | ✅ Aligned |
 | **Vectorize** | Semantic search | ✅ Entity indexing + search + error similarity | ✅ Aligned |
@@ -44,7 +44,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | Tier | Purpose | Implementation | Status |
 |------|---------|----------------|--------|
 | **Tier A: DO** | Runtime coordination | 5 DOs with lease/cursor/failure/notification/stream/AI | ✅ |
-| **Tier B: D1** | Operational truth | 18 tables: sources, runs, entities, errors, policies, settings, schedules, audit | ✅ |
+| **Tier B: D1** | Operational truth | 23 tables: sources, runs, entities, errors, policies, settings, schedules, audit, metrics, deliveries, history | ✅ |
 | **Tier C: R2** | Immutable artifacts | raw/{source}/{day}/{id}.json structure | ✅ |
 | **Tier D: Pipelines** | Event lakehouse | Schema defined, binding ready (beta) | ⚠️ |
 | **Tier E: Analytics** | Metrics telemetry | Comprehensive metrics + synthetic cron | ✅ |
@@ -95,16 +95,16 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 
 ## 3. Test Coverage Analysis
 
-### 3.1 All Tests (483 passing)
+### 3.1 All Tests (706 passing)
 
 | Category | Tests | Coverage Area |
 |----------|-------|---------------|
-| **Unit tests** | 292 | lib modules, DOs, notifications, chunking, auth, alerting |
+| **Unit tests** | 346 | lib modules, DOs, notifications, chunking, auth, alerting |
 | **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert |
 | **E2E tests** | 6 | Health, dashboard, source registration, ingest/query, replay, browser status |
-| **Worker tests** | 106 | edge (42), ops (32), browser (32) |
+| **Worker tests** | 107 | edge (42), ops (32), browser (33) |
 | **Package tests** | 191 | contracts (121), normalizers (37), source-adapters (33) |
-| **Live tests** | 18 | Production endpoint validation |
+| **Live tests** | 21 | Production endpoint validation |
 
 ### 3.2 Test Infrastructure
 
@@ -213,7 +213,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | 0013_dashboard_indexes.sql | Performance indexes | ✅ |
 | 0014_generated_columns.sql | Expression indexes on metadata | ✅ |
 
-**Total: 18 tables, 14 migrations**
+**Total: 23 tables (20 active, 3 legacy), 14 migrations**
 
 ### 5.2 Schema Quality
 
@@ -309,7 +309,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | OPERATIONS.md | Runbooks and procedures | ✅ Detailed |
 | RUNBOOK.md | Daily operations runbook | ✅ Current |
 | ROADMAP.md | Completed workstreams, future plans | ✅ Updated |
-| CHANGELOG.md | v0.1.0 and v0.1.1 release notes | ✅ Current |
+| CHANGELOG.md | v0.1.0, v0.1.1, v0.1.2 release notes | ✅ Current |
 | CLAUDE.md | Project context for agents | ✅ Current |
 | AGENTS.md | Multi-agent instructions | ✅ Current |
 | PROJECT_STATUS.md | Current project status | ✅ Current |
@@ -360,7 +360,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 ### 9.4 Pre-deployment Checklist
 
 - [x] All type checks pass
-- [x] All tests pass (483)
+- [x] All tests pass (706)
 - [x] Live tests pass against production
 - [x] All workers deployed
 - [x] D1 database created and migrations applied
@@ -478,7 +478,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 
 **APPROVED FOR PRODUCTION USE WITH MANUAL TRIGGERING**
 
-Uplink Connect v3.01 (v0.1.2) is ready for production use with manual or API-driven triggers. The implementation:
+Uplink Connect v0.1.2 is ready for production use with manual or API-driven triggers. The implementation:
 
 1. ✅ Follows Cloudflare's 2026 platform guidance
 2. ✅ Implements all critical features from the architecture plan
@@ -517,16 +517,16 @@ Uplink Connect v3.01 (v0.1.2) is ready for production use with manual or API-dri
 
 ### Source Files (Non-test)
 - 4 Worker entry points
-- 14 Core route modules
+- 16 Core route modules
 - 15+ Library modules
 - 2 Workflow implementations
 - 5 Durable Object implementations
 - 3 Package exports
-- 9 SQL migrations
+- 14 SQL migrations
 
 ### Test Files
 - 33+ test files across all workspaces
-- 483 total tests
+- 706 total tests
 - 100% pass rate
 
 ### Documentation Files

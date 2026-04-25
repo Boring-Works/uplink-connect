@@ -14,7 +14,7 @@ All 4 UplinkConnect services have been comprehensively validated in production. 
 | Check | Result |
 |-------|--------|
 | TypeScript compilation | ✅ 0 errors across 7 packages |
-| Unit tests | ✅ 483 passing |
+| Unit tests | ✅ 706 passing |
 | Smoke tests | ✅ 9/9 passing |
 | Health endpoints | ✅ All 4 workers respond 200 |
 | Auth protection | ✅ All internal endpoints return 401 without valid credentials |
@@ -197,7 +197,7 @@ async function proxyToCore(env: Env, path: string, init?: RequestInit): Promise<
 | `@uplink/contracts` | 121 | 2.2s | ✅ |
 | `@uplink/normalizers` | 37 | 369ms | ✅ |
 | `@uplink/source-adapters` | 33 | 460ms | ✅ |
-| **Total** | **483** | **~9s** | **✅** |
+| **Total** | **706** | **~9s** | **✅** |
 
 ### Smoke Test
 

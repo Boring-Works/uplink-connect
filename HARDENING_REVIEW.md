@@ -1,4 +1,4 @@
-# Uplink Connect v3.01 — Hardening & Improvement Review
+# Uplink Connect v0.1.2 — Hardening & Improvement Review
 
 **Date:** 2026-04-23
 **Scope:** Security, reliability, performance, observability, and maintainability
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestion platform** with 483+ passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 23-24 hardening pass and identifies **remaining gaps** for future iterations.
+Uplink Connect v0.1.2 is a **production-hardened, Cloudflare-native data ingestion platform** with 706+ passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 23-24 hardening pass and identifies **remaining gaps** for future iterations.
 
 **Bottom line:** The platform is safe for current usage. The items below are about resilience under abuse, cost protection at scale, and operational confidence.
 
@@ -21,9 +21,10 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 
 **Status:** ✅ **ADDRESSED** — Per-IP rate limiting implemented on all POST endpoints
 
-**Evidence:**
-- `uplink-edge/src/index.ts` — all POST endpoints accept requests without any throttling
-- No Cloudflare Rate Limiting rules or WAF configuration in repo
+**Evidence (Current State):**
+- `uplink-edge/src/index.ts` — In-memory sliding window rate limiter: 100 req/60s per IP
+- Returns 429 with `Retry-After` when limit exceeded
+- ⚠️ Cloudflare Rate Limiting rules recommended for cross-instance protection
 
 **Fix Applied (April 24):**
 - In-memory sliding window rate limiter: 100 requests per 60s per IP (`cf-connecting-ip`)
@@ -40,9 +41,11 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 
 **Status:** ✅ **ADDRESSED** — Size limits + streaming for large files
 
-**Evidence:**
-- `uplink-edge/src/index.ts` — `const buffer = await file.arrayBuffer()` loads entire file into memory
-- `computeBufferHash(buffer)` hashes the entire buffer
+**Evidence (Current State):**
+- `uplink-edge/src/index.ts` — Max 10 files per upload, max 50MB per file
+- Files >5MB stream directly to R2 via `file.stream()` without memory loading
+- Files <=5MB use `arrayBuffer()` with SHA-256 hash
+- File names sanitized to prevent path traversal
 
 **Fixes Applied:**
 - `/v1/intake` — `Content-Length` validated, max 10MB body
@@ -59,9 +62,10 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 
 **Status:** ✅ **FIXED** — Already protected by `/internal/*` auth middleware; added defense-in-depth explicit checks in route handlers
 
-**Evidence:**
-- `dashboard-stream.ts:29-47` — accepts WebSocket upgrade without any auth check
-- `error-agent.ts:36-51` — same, no auth gate before accepting connection
+**Evidence (Current State):**
+- `/internal/*` middleware requires `x-uplink-internal-key` header on all requests
+- `routes/agents.ts` — `ensureInternalAuth()` check before proxying to DOs
+- Verified: 401 returned without auth header, 401 with wrong key
 
 **Fix Applied (April 24):**
 - `routes/agents.ts` — Added `ensureInternalAuth()` check before proxying to DOs

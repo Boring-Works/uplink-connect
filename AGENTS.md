@@ -103,7 +103,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Application Entry Points
 - `apps/uplink-edge/src/index.ts` - Public API (intake, triggers)
-- `apps/uplink-core/src/index.ts` - Core processing (40+ endpoints)
+- `apps/uplink-core/src/index.ts` - Core processing (60+ endpoints)
 - `apps/uplink-ops/src/index.ts` - Protected ops proxy
 - `apps/uplink-browser/src/index.ts` - Browser collection
 
@@ -150,7 +150,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Testing
 - Vitest with @cloudflare/vitest-pool-workers
-- 483+ tests across unit, integration, e2e, live, contracts, normalizers, source-adapters
+- 706+ tests across unit, integration, e2e, live, contracts, normalizers, source-adapters
 - Tests run in actual Workers runtime
 
 ---
@@ -302,4 +302,4 @@ pnpm vitest run --config vitest.live.config.ts
 
 ## Last Updated
 
-April 24, 2026 - v0.1.2 with SDK-native standards audit complete, ULID migration (52 instances), file upload streaming, all 483 tests passing
+April 24, 2026 - v0.1.2 with SDK-native standards audit complete, ULID migration (52 instances), file upload streaming, all 706 tests passing

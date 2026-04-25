@@ -24,9 +24,9 @@ Uplink Connect is deployed as 4 interconnected Cloudflare Workers:
 | Worker | Purpose | Public |
 |--------|---------|--------|
 | `uplink-edge` | Ingest API, source triggers | Yes |
-| `uplink-core` | Queue processing, workflows, D1, R2 | No |
+| `uplink-core` | Queue processing, workflows, D1, R2 | Yes (workers_dev) |
 | `uplink-browser` | Browser rendering service | No |
-| `uplink-ops` | Operations proxy API | Yes (protected) |
+| `uplink-ops` | Operations proxy API | No (internal only via service bindings) |
 
 ## Cloudflare Resources
 

@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `permanentlyDeleteSource` now cleans up `source_schedules`, `source_metrics_5min`, `source_metrics_daily`, `source_auth_refs`
   - Fixed scheduler HTML `nextRunText` string literal
 
-- **Test Count**: 483 passing across all suites
+- **Test Count**: 706 passing across all suites
 
 ### Dependencies
 
@@ -156,7 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added 35+ new tests across all suites
 - Added 43 new utility tests in `@uplink/contracts` for safe JSON, sanitization, and HTTP error classification
 - Added 10 new integration tests in core for logging sanitization and HTTP-status-based retry logic
-- Total test count: 483+ (up from 409)
+- Total test count: 706+ (up from 587)
 
 #### Real Data Sources
 - **Multi-source public API ingestion** - 4 live sources proving platform versatility
@@ -236,7 +236,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - R2 raw artifact persistence
   - Entity normalization pipeline
   - Vectorize indexing for semantic search
-  - 45+ internal endpoints
+  - 60+ internal endpoints
   
 - **uplink-browser** - Browser collection service
   - `/health` health check
@@ -349,7 +349,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Real-time WebSocket updates (added in v0.1.1)
 
 #### API Endpoints
-- 55+ endpoints across all services
+- 86+ endpoints across all services
 - Consistent authentication patterns
 - Structured error responses
 - Pagination support
@@ -467,5 +467,6 @@ wrangler secret put BROWSER_API_KEY
 
 ---
 
+[0.1.2]: https://github.com/boringworks/uplink-connect/releases/tag/v0.1.2
 [0.1.1]: https://github.com/boringworks/uplink-connect/releases/tag/v0.1.1
 [0.1.0]: https://github.com/boringworks/uplink-connect/releases/tag/v0.1.0

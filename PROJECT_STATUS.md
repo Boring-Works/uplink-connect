@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 483 tests pass, and it is actively processing real data from 4 live public API sources.
+Uplink Connect v0.1.2 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 706 tests pass, and it is actively processing real data from 4 live public API sources.
 
 ### Live Deployment
 - **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
@@ -51,7 +51,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Entity normalization and deduplication
 - ✅ Vectorize semantic search
 - ✅ **AST-based code chunking** - Intelligent chunking of TS/JS files by constructs (function, class, interface, type)
-- ✅ **Live public data sources** - 5 diverse APIs configured and verified (USGS, GitHub, HN, exchange rates, NWS weather)
+- ✅ **Live public data sources** - 5 diverse APIs available via setup script (USGS, GitHub, HN, exchange rates, NWS weather); 4 actively deployed in production
 - ✅ **Manual trigger safety** - Hard-coded scheduled triggers removed to prevent unexpected costs
 
 #### Coordination & Reliability
@@ -85,18 +85,18 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Source soft-delete with retention
 - ✅ Audit logging for all operations
 
-#### Testing (483+ Tests)
+#### Testing (706+ Tests)
 - ✅ 292 core unit tests (lib modules, DOs, processing, retry, metrics)
 - ✅ 35 integration tests (coordinator, workflows, pipeline, replay, recovery)
 - ✅ 6 e2e tests (full flows)
 - ✅ 42 edge worker tests
 - ✅ 32 ops worker tests
-- ✅ 32 browser worker tests
+- ✅ 33 browser worker tests
 - ✅ 121 contracts tests
 - ✅ 37 normalizers tests
 - ✅ 33 source-adapters tests
 - ✅ 21 live tests (production validation)
-- **Total: 483 tests across all suites**
+- **Total: 706 tests across all suites**
 
 ---
 
@@ -112,7 +112,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 *Webhooks use HMAC signature verification
 
-### Internal Endpoints (uplink-core) - 45+ endpoints
+### Internal Endpoints (uplink-core) - 60+ endpoints
 | Category | Endpoints |
 |----------|-----------|
 | **Dashboard** | `/dashboard`, `/internal/dashboard/v2` |
@@ -155,7 +155,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 ## Database Schema
 
-### 18 Tables (D1)
+### 23 Tables (D1)
 1. `source_configs` - Source registry
 2. `source_policies` - Rate limits and retry config
 3. `source_capabilities` - Feature flags
@@ -174,6 +174,8 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 16. `audit_log` - Operator action log
 17. `source_schedules` - Cron-driven source schedules
 18. `notification_deliveries` - Notification delivery tracking
+19. `alerts_history` - Resolved alert history
+20. `source_metrics_daily` - Daily metrics rollups
 
 ### 14 Migrations Applied
 - 0001_control_schema.sql
@@ -223,7 +225,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | TypeScript Source Files | 47 |
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
-| Test Coverage | 483 tests |
+| Test Coverage | 706 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Secrets Configured | CORE_INTERNAL_KEY, INGEST_API_KEY, BROWSER_API_KEY, DASHBOARD_PASSWORD |
@@ -238,7 +240,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ No debugger statements
 - ✅ Strict TypeScript enabled
 - ✅ All type checks pass
-- ✅ All tests pass (483)
+- ✅ All tests pass (706)
 - ✅ Biome linting clean
 - ✅ All 4 workers deployed and healthy
 - ✅ Smoke test passes (9/9)
@@ -246,10 +248,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ DLQ resilience with try/catch wrapping
 - ✅ Dashboard auth only parses actual form submissions
 - ✅ No secrets in code
-- ✅ Core worker refactored into 15 route modules
+- ✅ Core worker refactored into 16 route modules
 - ✅ CI/CD pipeline configured
 - ✅ Synthetic monitoring active
-- ✅ 5 Durable Objects all SQL-backed (SourceCoordinator, BrowserManagerDO, NotificationDispatcher, DashboardStreamDO, ErrorAgentDO)
+- ✅ 5 Durable Objects (3 SQL-backed: BrowserManagerDO, ErrorAgentDO, NotificationDispatcher; 2 KV-backed: SourceCoordinator, DashboardStreamDO)
 - ✅ WebSocket hibernation for real-time features
 - ✅ DO alarms replace setInterval in all DOs
 - ✅ Constant-time auth comparisons across all workers
@@ -328,9 +330,9 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 ## Conclusion
 
-Uplink Connect v3.01 is **production-ready** with:
+Uplink Connect v0.1.2 is **production-ready** with:
 - ✅ Complete feature set
-- ✅ Comprehensive testing (483+)
+- ✅ Comprehensive testing (706+)
 - ✅ Full observability
 - ✅ Extensive documentation
 - ✅ Clean, maintainable code
@@ -449,4 +451,4 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ### Documentation
 - **OpenAPI 3.0 Spec**: Complete API specification at `openapi.yml`
-- **483 Tests**: All passing across unit, contracts, normalizers, and source-adapters suites
+- **706 Tests**: All passing across unit, integration, e2e, live, worker, and package suites

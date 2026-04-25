@@ -1,4 +1,4 @@
-# UplinkConnect v3.01 — Native Cloudflare SDK Gap Analysis
+# UplinkConnect v0.1.2 — Native Cloudflare SDK Gap Analysis
 
 **Date:** 2026-04-24  
 **Scope:** Identify every production-ready native Cloudflare SDK feature that is AVAILABLE but UNUSED in UplinkConnect, with migration paths from custom code to native SDK.  
@@ -35,7 +35,7 @@
 | **Minor gaps** (quality-of-life improvements) | 4 | Low-Medium |
 | **Already well-utilized** | 14 | — |
 
-**The single biggest gap:** UplinkConnect does not use the **Agents SDK** at all. The custom `ErrorAgentDO` (~443 lines), `DashboardStreamDO`, and `NotificationDispatcher` are all hand-rolled Durable Objects that duplicate capabilities the Agents SDK provides natively. All 5 DOs are now SQL-backed.
+**The single biggest gap:** UplinkConnect does not use the **Agents SDK** at all. The custom `ErrorAgentDO` (~443 lines), `DashboardStreamDO`, and `NotificationDispatcher` are all hand-rolled Durable Objects that duplicate capabilities the Agents SDK provides natively. 3 of 5 DOs are SQL-backed (BrowserManagerDO, ErrorAgentDO, NotificationDispatcher). SourceCoordinator and DashboardStreamDO remain KV-backed.
 
 ---
 
@@ -235,7 +235,7 @@ CREATE INDEX idx_source_type ON source_configs(source_type);
 
 ### 5. Durable Objects SQL API — Using KV Storage on SQLite-backed DOs ✅ DONE
 
-**What you have:** All 5 DOs migrated to DO SQL API with proper SQLite tables and schema versioning:
+**What you have:** 3 of 5 DOs migrated to DO SQL API with proper SQLite tables and schema versioning:
 
 - `BrowserManagerDO`: `sessions`, `session_queue`, `stats` tables
 - `ErrorAgentDO`: `chat_messages` table with schema versioning

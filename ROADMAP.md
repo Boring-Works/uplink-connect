@@ -190,7 +190,7 @@ Goal: ensure reliable deployment and high code quality.
 Deliverables:
 
 - [x] GitHub Actions CI/CD workflow
-- [x] 483+ tests across all suites
+- [x] 706+ tests across all suites
 - [x] TypeScript strict mode throughout
 - [x] Biome linting and formatting
 - [x] Live test suite against production
@@ -242,12 +242,12 @@ Uplink Connect v1 is **COMPLETE**:
 
 **Core Platform:**
 - Multi-tenant source registry with policies
-- Durable Object-based source coordination (5 DOs, all SQL-backed)
+- Durable Object-based source coordination (5 DOs, 3 SQL-backed)
 - WebSocket real-time features (2 DOs)
 - Workflow-driven collection with automatic retries
 - Queue-based async processing with DLQ
 - R2 raw artifact storage and file uploads (streaming for large files)
-- D1 operational data store (18 tables, 14 migrations)
+- D1 operational data store (23 tables, 14 migrations)
 
 **Observability:**
 - Analytics Engine metrics
@@ -278,7 +278,7 @@ Uplink Connect v1 is **COMPLETE**:
 - Full TypeScript type safety
 - Shared contract packages
 - pnpm workspace monorepo
-- 483+ comprehensive tests
+- 706+ comprehensive tests
 - CI/CD pipeline
 
 ### API Surface
@@ -286,20 +286,20 @@ Uplink Connect v1 is **COMPLETE**:
 | Service | Endpoints | Auth |
 |---------|-----------|------|
 | uplink-edge | 5 | Bearer + None |
-| uplink-core | 45+ | Internal + None |
+| uplink-core | 60+ | Internal + None |
 | uplink-ops | 7 | Bearer |
 | uplink-browser | 2 | Bearer + None |
 
 ### Data Model
 
-- 18 D1 tables
+- 23 D1 tables
 - 14 migrations
 - Full foreign key relationships
 - Indexed for query performance
 
 ---
 
-## Future Enhancements (Post-v0.1.1)
+## Future Enhancements (Post-v0.1.2)
 
 ### Immediate (Next 2 Weeks)
 

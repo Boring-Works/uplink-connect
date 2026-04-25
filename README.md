@@ -1,8 +1,8 @@
-# Uplink Connect v3.01
+# Uplink Connect v0.1.2
 
 Cloudflare-native data ingestion and collection platform. Built for reliability, observability, and scale.
 
-[![Tests](https://img.shields.io/badge/tests-483%2B%20passing-success)](./apps/uplink-core/src/test)
+[![Tests](https://img.shields.io/badge/tests-706%2B%20passing-success)](./apps/uplink-core/src/test)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -27,14 +27,14 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Protected operations**: Secure ops API for run management and replay
 - **Universal notifications**: 8 providers including Slack, Discord, PagerDuty, Teams
 - **Code intelligence**: AST-based chunking for TS/JS file ingestion
-- **Live public data sources**: 5 diverse APIs configured (USGS earthquakes, GitHub events, Hacker News, exchange rates, NWS weather)
+- **Live public data sources**: 5 diverse APIs available via setup script (USGS earthquakes, GitHub events, Hacker News, exchange rates, NWS weather)
 - **Production validated**: All endpoints verified, auth hardened, DLQ resilient, SDK-native compliant — see `PRODUCTION_VALIDATION_REPORT.md`
 - **SDK-native standards**: ULIDs via `ulidx`, streaming uploads, `AbortSignal.any()`, `timingSafeEqual` everywhere
 
 ## Architecture
 
 ```
-                              Uplink Connect v3.01
+                              Uplink Connect v0.1.2
 
              +---------------------------------------------------+
              |                  Public Edge Plane                |
@@ -103,7 +103,7 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 | Service | Type | Purpose |
 |---------|------|---------|
 | `uplink-edge` | Public Worker | External intake API, webhook receiver, manual triggers, file uploads |
-| `uplink-core` | Internal Worker | Queue processing, D1/R2 writes, entity normalization, workflows, 45+ endpoints |
+| `uplink-core` | Internal Worker | Queue processing, D1/R2 writes, entity normalization, workflows, 60+ endpoints |
 | `uplink-browser` | Internal Worker | Browser-based collection (fetch-based, Browser Rendering ready) |
 | `uplink-ops` | Protected Worker | Operator API for runs, replay, health checks, alerts |
 
@@ -149,7 +149,7 @@ pnpm dev:ops
 
 ### Live Public Data Sources
 
-Five real public data sources are actively collecting to prove the platform handles diverse APIs:
+Five real public data sources are configured via setup script to prove the platform handles diverse APIs:
 
 ```bash
 # Set up all public sources
@@ -327,14 +327,18 @@ pnpm vitest run --config vitest.live.config.ts
 
 ### Test Coverage
 
-**483+ tests** across unit, integration, e2e, live, worker, and package test suites.
+**706+ tests** across unit, integration, e2e, live, worker, and package test suites.
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|
-| **Unit tests** | 292 | lib modules, DOs, notifications, chunking, auth, alerting |
+| **Unit tests** | 346 | lib modules, DOs, notifications, chunking, auth, alerting |
+| **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery |
+| **E2E tests** | 6 | Full flows: health, dashboard, ingest, replay, browser |
+| **Live tests** | 21 | Production endpoint validation |
+| **Worker tests** | 107 | edge (42), ops (32), browser (33) |
 | **Contracts tests** | 121 | Zod schemas, utilities, sanitization, HTTP classification |
 | **Normalizers tests** | 37 | Entity normalization, code chunking |
-| **Source-adapters tests** | 33 | API, webhook, browser adapters |
+| **Source-adapters tests** | 33 | API, webhook, browser, NWS adapters |
 
 #### Integration Test Files
 | Test File | Tests | Coverage Area |
@@ -460,6 +464,10 @@ pnpm vitest run --config vitest.live.config.ts
 | `source_metrics_5min` | Aggregated metrics windows |
 | `platform_settings` | Global configuration |
 | `audit_log` | Operator action log |
+| `source_schedules` | Cron-driven source schedules |
+| `alerts_history` | Resolved alert history |
+| `notification_deliveries` | Notification delivery tracking |
+| `source_metrics_daily` | Daily metrics rollups |
 
 ### Data Architecture Principles
 

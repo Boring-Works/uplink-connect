@@ -6,6 +6,7 @@ Complete reference for all API endpoints.
 
 - [Edge Endpoints](#edge-endpoints)
 - [Core Internal Endpoints](#core-internal-endpoints)
+- [Additional Core Internal Endpoints](#additional-core-internal-endpoints)
 - [Ops Endpoints](#ops-endpoints)
 - [Browser Endpoints](#browser-endpoints)
 - [Request/Response Examples](#requestresponse-examples)
@@ -874,6 +875,8 @@ curl -X POST http://localhost:8789/v1/runs/run-123/replay \
 ```
 
 ---
+
+## Additional Core Internal Endpoints
 
 ### GET /internal/dashboard/v2
 

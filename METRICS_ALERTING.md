@@ -155,8 +155,8 @@ curl "http://localhost:8787/internal/alerts?severity=critical&acknowledged=false
 Apply the migration:
 ```bash
 cd apps/uplink-core
-pnpm run d1:migrate:local   # For local dev
-pnpm run d1:migrate:remote  # For production
+wrangler d1 migrations apply uplink-control --local   # For local dev
+wrangler d1 migrations apply uplink-control --remote  # For production
 ```
 
 ## Future Enhancements

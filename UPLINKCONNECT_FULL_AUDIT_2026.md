@@ -1,4 +1,4 @@
-# UplinkConnect v3.01 — Full Architecture & SDK Audit
+# UplinkConnect v0.1.2 — Full Architecture & SDK Audit
 
 **Date:** 2026-04-23  
 **Scope:** Comprehensive review of architecture, native SDK utilization, code quality, security, and operational readiness  
@@ -17,7 +17,7 @@ UplinkConnect is a sophisticated, production-ready data ingestion platform built
 | **Native SDK Usage** | A- | 14 SDK features utilized; SDK-native standards audit complete |
 | **Code Quality** | B+ | Good patterns, some duplication, typed well |
 | **Security** | A- | Auth hardened, SSRF protection, timing-safe comparisons, security headers |
-| **Testing** | A | 292 core unit + 191 package tests, 483 total, all passing |
+| **Testing** | A | 346 core unit + 191 package tests + 104 worker tests + 62 integration/e2e/live tests, 706 total, all passing |
 | **Observability** | B+ | Analytics Engine, structured logs, health checks |
 | **Operational Readiness** | A- | DLQ, circuit breakers, retries, backpressure all present |
 
@@ -76,7 +76,7 @@ UplinkConnect is a sophisticated, production-ready data ingestion platform built
 
 | Feature | Evidence | Grade |
 |---------|----------|-------|
-| D1 Database | 12 migrations, complex queries, JSON functions | A |
+| D1 Database | 14 migrations, complex queries, JSON functions | A |
 | R2 Object Storage | customMetadata, structured keys | A |
 | Vectorize | Embeddings, metadata, namespace "errors" | A |
 | Queues | Batch processing, DLQ, exponential backoff | A |
@@ -194,7 +194,7 @@ const doPromise = coordinator.fetch(doUrl.toString(), { method: "POST" });
 |-------|-----------|--------|
 | Internal API | `x-uplink-internal-key` header | ✅ `timingSafeEqual` |
 | Dashboard | Password via `DASHBOARD_PASSWORD` | ⚠️ Basic, no MFA |
-| WebSocket | No auth on `/internal/agent/error` | ❌ **Gap** |
+| WebSocket | Auth enforced via `/internal/*` middleware + `ensureInternalAuth()` | ✅ **Fixed** |
 
 ### 4.2 Data Protection
 
@@ -252,7 +252,7 @@ const doPromise = coordinator.fetch(doUrl.toString(), { method: "POST" });
 
 | Layer | Tests | Status |
 |-------|-------|--------|
-| Unit | 287 | ✅ Good coverage of lib modules |
+| Unit | 346 | ✅ Good coverage of lib modules |
 | Integration | 35 | ✅ D1, DO, Workflow tested |
 | E2E | ? | ⚠️ Files exist but not run in CI |
 | Live | ? | ⚠️ Files exist but require real env |
@@ -301,7 +301,7 @@ const doPromise = coordinator.fetch(doUrl.toString(), { method: "POST" });
 | `compatibility_date` | 2026-04-12 (recent) |
 | `nodejs_compat` | ✅ Enabled |
 | Smart Placement | ✅ Enabled |
-| Migrations | 12 SQL files, properly ordered |
+| Migrations | 14 SQL files, properly ordered |
 | Secrets | Via env vars, not in code |
 
 ---

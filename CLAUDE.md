@@ -18,7 +18,7 @@ A production-ready, multi-tenant data ingestion system built entirely on Cloudfl
 
 ```
 uplink-edge      → Public intake API (webhooks, manual triggers, file uploads)
-uplink-core      → Queue processing, DO coordination, workflows, 45+ endpoints
+uplink-core      → Queue processing, DO coordination, workflows, 60+ endpoints
 uplink-browser   → Browser-based collection
 uplink-ops       → Protected operations API
 ```
@@ -47,7 +47,7 @@ uplink-ops       → Protected operations API
 - ✅ Workflow-driven collection with automatic retries
 - ✅ Queue-based async processing with DLQ
 - ✅ R2 raw artifact storage with structured key paths
-- ✅ D1 operational data store (18 tables, 14 migrations)
+- ✅ D1 operational data store (23 tables, 14 migrations)
 - ✅ Entity normalization, deduplication, and relationship linking
 - ✅ Vectorize semantic search
 - ✅ Comprehensive metrics and alerting with Analytics Engine
@@ -65,12 +65,12 @@ uplink-ops       → Protected operations API
 - ✅ Webhook HMAC signature verification
 - ✅ File upload endpoint with multipart/form-data
 - ✅ AST-based code chunking for TS/JS ingestion
-- ✅ 483+ tests passing (292 core unit + 121 contracts + 37 normalizers + 33 source-adapters)
+- ✅ 706+ tests passing (346 core unit + 35 integration + 6 e2e + 21 live + 42 edge + 32 ops + 33 browser + 121 contracts + 37 normalizers + 33 source-adapters)
 
 ### API Surface
 
 - **uplink-edge**: 4 endpoints (public)
-- **uplink-core**: 50+ endpoints (internal)
+- **uplink-core**: 60+ endpoints (internal)
 - **SDK-native audit**: ULIDs, streaming uploads, `AbortSignal.any()`, `timingSafeEqual` everywhere
 - **uplink-ops**: 7 endpoints (protected)
 - **uplink-browser**: 2 endpoints (internal)
@@ -109,7 +109,7 @@ UplinkConnect/
 │   │   │   │   ├── notification-dispatcher.ts # DO for rate-limited notifications
 │   │   │   │   ├── dashboard-stream.ts      # DO for real-time dashboard
 │   │   │   │   └── error-agent.ts           # DO for RAG error diagnosis
-│   │   │   ├── routes/               # 15 route modules
+│   │   │   ├── routes/               # 16 route modules
 │   │   │   └── test/                 # 292+ tests (unit, integration, e2e, live)
 │   │   ├── migrations/       # 14 SQL migrations
 │   │   ├── wrangler.jsonc    # Worker config with bindings
@@ -165,7 +165,7 @@ UplinkConnect/
 
 ## Database Schema (D1)
 
-### Tables (18 total)
+### Tables (23 total, 20 active)
 
 1. **source_configs** - Source registry
 2. **source_policies** - Rate limits and retry config
@@ -183,6 +183,12 @@ UplinkConnect/
 14. **source_metrics_5min** - Aggregated metrics
 15. **platform_settings** - Global configuration
 16. **audit_log** - Operator action log
+17. **source_schedules** - Cron-driven source schedules
+18. **alerts_history** - Resolved alert history
+19. **notification_deliveries** - Notification delivery tracking
+20. **source_metrics_daily** - Daily metrics rollups
+
+*Legacy/unused tables: `sources` (replaced by `source_configs`), `source_auth_refs` (cleanup only), `retry_batches` (unused)*
 
 ### Migrations
 
@@ -197,8 +203,8 @@ UplinkConnect/
 9. `0009_notification_deliveries.sql` - Notification tracking
 10. `0010_source_schedules.sql` - Source schedules
 11. `0011_error_dedup_hash.sql` - Error deduplication
-12. `0012_error_occurrence_count.sql` - Error occurrence counting
-13. `0013_performance_indexes.sql` - Dashboard query indexes
+12. `0012_ai_sdk_v6_migration.sql` - AI SDK v6 compatibility
+13. `0013_dashboard_indexes.sql` - Dashboard query indexes
 14. `0014_generated_columns.sql` - Generated columns for metadata
 
 ## Commands
@@ -265,7 +271,7 @@ BROWSER_API_KEY=browser-dev-key
 
 - **Framework**: Vitest with @cloudflare/vitest-pool-workers
 - **Test Files**: 33+ test files across all workspaces
-- **Total Tests**: 483+ passing (292 core unit + 121 contracts + 37 normalizers + 33 source-adapters)
+- **Total Tests**: 706+ passing (346 core unit + 35 integration + 6 e2e + 21 live + 42 edge + 32 ops + 33 browser + 121 contracts + 37 normalizers + 33 source-adapters)
 - **Coverage Areas**:
   - Core unit tests: lib modules, DOs, notifications, chunking, auth, alerting
   - Contracts tests: Zod schemas, utilities, sanitization, HTTP classification
