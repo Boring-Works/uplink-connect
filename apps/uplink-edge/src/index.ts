@@ -339,23 +339,24 @@ app.post("/v1/files/:sourceId", async (c) => {
 		if (typeof (file as File).name !== "string") {
 			continue;
 		}
+		const f = file as File;
 
-		if (file.size > MAX_FILE_SIZE) {
-			failed.push({ fileName: file.name, reason: "File too large" });
+		if (f.size > MAX_FILE_SIZE) {
+			failed.push({ fileName: f.name, reason: "File too large" });
 			continue;
 		}
 
 		const ingestId = ulid();
-		const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+		const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
 		const key = `uploads/${sourceId}/${ingestId}/${safeName}`;
 		const STREAMING_THRESHOLD = 5 * 1024 * 1024;
 		let contentHash: string;
 
 		try {
-			if (file.size <= STREAMING_THRESHOLD) {
-				const buffer = await file.arrayBuffer();
+			if (f.size <= STREAMING_THRESHOLD) {
+				const buffer = await f.arrayBuffer();
 				await c.env.RAW_BUCKET.put(key, buffer, {
-					httpMetadata: { contentType: file.type || "application/octet-stream" },
+					httpMetadata: { contentType: f.type || "application/octet-stream" },
 					customMetadata: {
 						sourceId,
 						fileName: safeName,
@@ -366,8 +367,8 @@ app.post("/v1/files/:sourceId", async (c) => {
 				contentHash = await computeBufferHash(buffer);
 			} else {
 				// Stream large files directly to R2 without loading into memory
-				await c.env.RAW_BUCKET.put(key, file.stream(), {
-					httpMetadata: { contentType: file.type || "application/octet-stream" },
+				await c.env.RAW_BUCKET.put(key, f.stream(), {
+					httpMetadata: { contentType: f.type || "application/octet-stream" },
 					customMetadata: {
 						sourceId,
 						fileName: safeName,
@@ -378,7 +379,7 @@ app.post("/v1/files/:sourceId", async (c) => {
 				contentHash = "";
 			}
 		} catch (err) {
-			failed.push({ fileName: file.name, reason: err instanceof Error ? err.message : "R2 upload failed" });
+			failed.push({ fileName: f.name, reason: err instanceof Error ? err.message : "R2 upload failed" });
 			continue;
 		}
 
@@ -396,8 +397,8 @@ app.post("/v1/files/:sourceId", async (c) => {
 					contentHash,
 					rawPayload: {
 						fileName: safeName,
-						contentType: file.type || "application/octet-stream",
-						size: file.size,
+						contentType: f.type || "application/octet-stream",
+						size: f.size,
 						r2Key: key,
 					},
 					observedAt: toIsoNow(),
@@ -412,11 +413,11 @@ app.post("/v1/files/:sourceId", async (c) => {
 		try {
 			await c.env.INGEST_QUEUE.send(queueMessage);
 		} catch (err) {
-			failed.push({ fileName: file.name, reason: err instanceof Error ? err.message : "Queue enqueue failed" });
+			failed.push({ fileName: f.name, reason: err instanceof Error ? err.message : "Queue enqueue failed" });
 			continue;
 		}
 
-		results.push({ fileName: safeName, ingestId, size: file.size, key });
+		results.push({ fileName: safeName, ingestId, size: f.size, key });
 	}
 
 	return c.json(
