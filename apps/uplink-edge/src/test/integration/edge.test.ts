@@ -121,7 +121,7 @@ describe("uplink-edge integration", () => {
 			expect(res.status).toBe(202);
 			const body = await res.json() as { recordCount: number; ingestId: string };
 			expect(body.recordCount).toBe(1);
-			expect(body.ingestId).toMatch(/^[0-9a-f-]{36}$/);
+			expect(body.ingestId).toMatch(/^[0-9A-Z]{26}$/);
 		});
 	});
 

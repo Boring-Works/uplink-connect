@@ -334,7 +334,9 @@ app.post("/v1/files/:sourceId", async (c) => {
 	const failed: Array<{ fileName: string; reason: string }> = [];
 
 	for (const file of files) {
-		if (!(file instanceof File)) {
+		// Duck-type check: undici FormData returns File-like objects that may
+		// not be instanceof File across JS realms (e.g. vitest Node environment)
+		if (typeof (file as File).name !== "string") {
 			continue;
 		}
 

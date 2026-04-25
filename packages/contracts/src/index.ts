@@ -1325,7 +1325,8 @@ export async function fetchWithCache(
 
 			return response;
 		} catch (error) {
-			if (error instanceof Error && error.name === "AbortError") {
+			// DOMException may not be instanceof Error in all test environments
+			if ((error instanceof Error || error instanceof DOMException) && (error as Error).name === "AbortError") {
 				throw error;
 			}
 			lastErrorMessage = error instanceof Error ? error.message : String(error);
