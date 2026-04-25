@@ -310,8 +310,8 @@ app.get("/dashboard", async (c) => {
 					<div class="alert-title">${escapeHtml(alert.message)}</div>
 					<div class="alert-meta">${escapeHtml(alert.alertType)} · ${date}</div>
 					<div class="alert-actions">
-						<button class="btn btn-sm btn-secondary" onclick="ackAlert('${escapeHtml(alert.alertId)}')">Ack</button>
-						<button class="btn btn-sm btn-primary" onclick="resolveAlert('${escapeHtml(alert.alertId)}')">Resolve</button>
+						<button class="btn btn-sm btn-secondary" onclick="ackAlert.call(this, '${escapeHtml(alert.alertId)}')">Ack</button>
+						<button class="btn btn-sm btn-primary" onclick="resolveAlert.call(this, '${escapeHtml(alert.alertId)}')">Resolve</button>
 					</div>
 				</div>`;
 			}).join("")
@@ -336,7 +336,7 @@ app.get("/dashboard", async (c) => {
 					${metricsHtml}
 				</div>
 				<div class="source-actions">
-					<button class="btn btn-sm btn-secondary" onclick="triggerSource('${escapeHtml(src.source_id)}')">Trigger</button>
+					<button class="btn btn-sm btn-secondary" onclick="triggerSource.call(this, '${escapeHtml(src.source_id)}')">Trigger</button>
 				</div>
 			</div>`;
 		}).join("") || '<div class="empty-state">No sources configured</div>';
@@ -347,7 +347,7 @@ app.get("/dashboard", async (c) => {
 			const time = new Date(run.created_at * 1000).toLocaleString();
 			const shortId = run.run_id.split(':').pop() || run.run_id;
 			const replayBtn = run.status === 'failed'
-				? `<button class="btn btn-sm btn-secondary" onclick="replayRun('${escapeHtml(run.run_id)}')">Replay</button>`
+				? `<button class="btn btn-sm btn-secondary" onclick="replayRun.call(this, '${escapeHtml(run.run_id)}')">Replay</button>`
 				: '';
 			return `<tr>
 				<td><div class="mono" title="${escapeHtml(run.run_id)}">${escapeHtml(shortId.slice(0, 14))}...</div></td>
@@ -367,7 +367,7 @@ app.get("/dashboard", async (c) => {
 					<div class="error-title">${escapeHtml(msg)}</div>
 					<div class="error-meta">${escapeHtml(err.phase)} · ${date} · ${err.retryCount} retries</div>
 					<div class="error-actions">
-						<button class="btn btn-sm btn-secondary" onclick="retryError('${escapeHtml(err.errorId)}')">Retry</button>
+						<button class="btn btn-sm btn-secondary" onclick="retryError.call(this, '${escapeHtml(err.errorId)}')">Retry</button>
 					</div>
 				</div>`;
 			}).join("")
@@ -933,6 +933,9 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 		}
 
 		window.triggerSource = async function(sourceId) {
+			const btn = this;
+			const originalText = btn ? btn.textContent : '';
+			if (btn) { btn.disabled = true; btn.textContent = 'Triggering...'; }
 			try {
 				const res = await fetch('/internal/sources/' + sourceId + '/trigger', {
 					method: 'POST',
@@ -943,20 +946,30 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				showToast('Triggered ' + sourceId, 'success');
 			} catch (e) {
 				showToast('Trigger failed', 'error');
+			} finally {
+				if (btn) { btn.disabled = false; btn.textContent = originalText; }
 			}
 		};
 
 		window.replayRun = async function(runId) {
+			const btn = this;
+			const originalText = btn ? btn.textContent : '';
+			if (btn) { btn.disabled = true; btn.textContent = 'Replaying...'; }
 			try {
 				const res = await fetch('/internal/runs/' + runId + '/replay', { method: 'POST' });
 				if (!res.ok) throw new Error('Replay failed');
 				showToast('Replay initiated', 'success');
 			} catch (e) {
 				showToast('Replay failed', 'error');
+			} finally {
+				if (btn) { btn.disabled = false; btn.textContent = originalText; }
 			}
 		};
 
 		window.retryError = async function(errorId) {
+			const btn = this;
+			const originalText = btn ? btn.textContent : '';
+			if (btn) { btn.disabled = true; btn.textContent = 'Retrying...'; }
 			try {
 				const res = await fetch('/internal/errors/' + errorId + '/retry', { method: 'POST' });
 				if (!res.ok) throw new Error('Retry failed');
@@ -964,10 +977,15 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				setTimeout(() => location.reload(), 1500);
 			} catch (e) {
 				showToast('Retry failed', 'error');
+			} finally {
+				if (btn) { btn.disabled = false; btn.textContent = originalText; }
 			}
 		};
 
 		window.ackAlert = async function(alertId) {
+			const btn = this;
+			const originalText = btn ? btn.textContent : '';
+			if (btn) { btn.disabled = true; btn.textContent = 'Acking...'; }
 			try {
 				const res = await fetch('/internal/alerts/' + alertId + '/acknowledge', { method: 'POST' });
 				if (!res.ok) throw new Error('Ack failed');
@@ -976,10 +994,15 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				if (el) el.style.opacity = '0.5';
 			} catch (e) {
 				showToast('Ack failed', 'error');
+			} finally {
+				if (btn) { btn.disabled = false; btn.textContent = originalText; }
 			}
 		};
 
 		window.resolveAlert = async function(alertId) {
+			const btn = this;
+			const originalText = btn ? btn.textContent : '';
+			if (btn) { btn.disabled = true; btn.textContent = 'Resolving...'; }
 			try {
 				const res = await fetch('/internal/alerts/' + alertId + '/resolve', { method: 'POST' });
 				if (!res.ok) throw new Error('Resolve failed');
@@ -988,6 +1011,8 @@ function renderDashboardHtml(p: DashboardHtmlParams): string {
 				if (el) el.remove();
 			} catch (e) {
 				showToast('Resolve failed', 'error');
+			} finally {
+				if (btn) { btn.disabled = false; btn.textContent = originalText; }
 			}
 		};
 

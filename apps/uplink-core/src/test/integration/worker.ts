@@ -4,7 +4,7 @@
 import type { Env } from "../../types";
 
 // Re-export the main worker
-export { default, SourceCoordinator, BrowserManagerDO, CollectionWorkflow, RetentionWorkflow } from "../../index";
+export { default, SourceCoordinator, BrowserManagerDO, DashboardStreamDO, ErrorAgentDO, NotificationDispatcher, CollectionWorkflow, RetentionWorkflow } from "../../index";
 
 // Export types for test environment
 export type { Env };

@@ -584,7 +584,7 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 					<button class="btn btn-sm btn-danger" onclick="bulkDelete()">Delete</button>
 				</div>
 			</div>
-			<div id="schedulesTableWrap">
+			<div id="schedulesTableWrap" style="overflow-x:auto;">
 				<div class="empty-state">No schedules configured yet.</div>
 			</div>
 		</div>

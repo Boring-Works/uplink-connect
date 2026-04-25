@@ -162,6 +162,7 @@ export class DashboardStreamDO extends DurableObject<Env> {
 			runSummary,
 			queueMetrics,
 			alertCount,
+			errorCount,
 		] = await Promise.all([
 			db.prepare("SELECT COUNT(*) as count FROM source_configs WHERE deleted_at IS NULL").first<{ count: number }>(),
 			db.prepare(`
@@ -178,6 +179,7 @@ export class DashboardStreamDO extends DurableObject<Env> {
 				WHERE created_at > unixepoch() - 3600
 			`).first<{ pending: number; processing: number }>(),
 			db.prepare("SELECT COUNT(*) as count FROM alerts_active WHERE resolved_at IS NULL").first<{ count: number }>(),
+			db.prepare("SELECT COUNT(*) as count FROM ingest_errors WHERE status = 'pending'").first<{ count: number }>(),
 		]);
 
 		const runTotals: Record<string, number> = {};
@@ -205,6 +207,9 @@ export class DashboardStreamDO extends DurableObject<Env> {
 			},
 			alerts: {
 				active: alertCount?.count ?? 0,
+			},
+			errors: {
+				pending: errorCount?.count ?? 0,
 			},
 		};
 	}

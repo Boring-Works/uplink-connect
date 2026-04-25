@@ -230,6 +230,24 @@ describe("ui pages", () => {
 		});
 	});
 
+	describe("websocket stream", () => {
+		it("accepts dashboard cookie auth (returns 400 without upgrade header, not 401)", async () => {
+			const res = await SELF.fetch("http://localhost/internal/stream/dashboard", {
+				headers: { cookie: authCookie },
+			});
+			// Without Upgrade: websocket header, the endpoint returns 400
+			// If auth failed it would return 401
+			expect(res.status).toBe(400);
+			const text = await res.text();
+			expect(text).toContain("Expected websocket");
+		});
+
+		it("rejects unauthenticated websocket requests", async () => {
+			const res = await SELF.fetch("http://localhost/internal/stream/dashboard");
+			expect(res.status).toBe(401);
+		});
+	});
+
 	describe("auth flow", () => {
 		it("shows password gate when not authenticated", async () => {
 			const res = await SELF.fetch("http://localhost/dashboard");

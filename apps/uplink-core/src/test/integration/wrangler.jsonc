@@ -56,6 +56,18 @@
 			{
 				"name": "BROWSER_MANAGER",
 				"class_name": "BrowserManagerDO"
+			},
+			{
+				"name": "DASHBOARD_STREAM",
+				"class_name": "DashboardStreamDO"
+			},
+			{
+				"name": "ERROR_AGENT",
+				"class_name": "ErrorAgentDO"
+			},
+			{
+				"name": "NOTIFICATION_DISPATCHER",
+				"class_name": "NotificationDispatcher"
 			}
 		]
 	},
@@ -70,6 +82,10 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["SourceCoordinator", "BrowserManagerDO"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["DashboardStreamDO", "ErrorAgentDO", "NotificationDispatcher"]
 		}
 	]
 }
