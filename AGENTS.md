@@ -16,6 +16,8 @@ Uplink Connect is a **Cloudflare-native data ingestion platform** built for reli
 
 ### Stack
 - **Tier:** Boring Stack Tier 3 (Cloudflare Workers bare)
+- **ID Generation:** ULIDs via `ulidx` (never `crypto.randomUUID()`)
+- **Date Format:** ISO 8601 via `toIsoNow()` in `@uplink/contracts`
 - **Language:** TypeScript 5.9+ (strict mode)
 - **Package Manager:** pnpm 10.6+
 - **Runtime:** Cloudflare Workers
@@ -142,7 +144,7 @@ pnpm dev:ops       # Terminal 4
 
 ### Patterns
 - Durable Objects for per-source state
-- Deterministic IDs for idempotency
+- ULIDs via `ulid()` from `@uplink/contracts` for all IDs (never UUID v4)
 - Structured logging (JSON)
 - Integer cents for money (never float)
 
@@ -300,4 +302,4 @@ pnpm vitest run --config vitest.live.config.ts
 
 ## Last Updated
 
-April 14, 2026 - v0.1.1 with live USGS data source, all P0 bugs fixed, WebSocket real-time dashboard, RAG error agent, and data export API
+April 24, 2026 - v0.1.2 with SDK-native standards audit complete, ULID migration (52 instances), file upload streaming, all 483 tests passing

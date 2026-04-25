@@ -27,8 +27,9 @@ Uplink Connect is a multi-tenant data ingestion platform built entirely on Cloud
 - **Protected operations**: Secure ops API for run management and replay
 - **Universal notifications**: 8 providers including Slack, Discord, PagerDuty, Teams
 - **Code intelligence**: AST-based chunking for TS/JS file ingestion
-- **Live public data sources**: 4 diverse APIs configured (USGS earthquakes, GitHub events, Hacker News, exchange rates)
-- **Production validated**: All endpoints verified, auth hardened, DLQ resilient — see `PRODUCTION_VALIDATION_REPORT.md`
+- **Live public data sources**: 5 diverse APIs configured (USGS earthquakes, GitHub events, Hacker News, exchange rates, NWS weather)
+- **Production validated**: All endpoints verified, auth hardened, DLQ resilient, SDK-native compliant — see `PRODUCTION_VALIDATION_REPORT.md`
+- **SDK-native standards**: ULIDs via `ulidx`, streaming uploads, `AbortSignal.any()`, `timingSafeEqual` everywhere
 
 ## Architecture
 
@@ -330,12 +331,10 @@ pnpm vitest run --config vitest.live.config.ts
 
 | Category | Count | Coverage Area |
 |----------|-------|---------------|
-| **Unit tests** | 274 | lib modules, DOs, notifications, chunking |
-| **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert |
-| **E2E tests** | 6 | Health, dashboard, source registration, ingest/query, replay, browser status |
-| **Worker tests** | 106 | edge (42), ops (32), browser (32) |
-| **Package tests** | 115 | contracts (49), normalizers (37), source-adapters (29) |
-| **Live tests** | 18 | Production endpoint validation |
+| **Unit tests** | 292 | lib modules, DOs, notifications, chunking, auth, alerting |
+| **Contracts tests** | 121 | Zod schemas, utilities, sanitization, HTTP classification |
+| **Normalizers tests** | 37 | Entity normalization, code chunking |
+| **Source-adapters tests** | 33 | API, webhook, browser adapters |
 
 #### Integration Test Files
 | Test File | Tests | Coverage Area |

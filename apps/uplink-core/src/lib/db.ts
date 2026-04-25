@@ -2,6 +2,7 @@ import {
 	SourceConfigSchema,
 	SourcePolicySchema,
 	safeJsonStringify,
+	ulid,
 	type IngestEnvelope,
 	type SourceConfig,
 	type SourcePolicy,
@@ -631,7 +632,7 @@ export async function recordIngestError(
 		retryAttempts?: RetryAttempt[];
 	},
 ): Promise<string> {
-	const errorId = crypto.randomUUID();
+	const errorId = ulid();
 	const classification = classifyError(new Error(params.errorMessage));
 	const errorHash = await hashError(params);
 
@@ -978,7 +979,7 @@ export async function upsertNormalizedEntities(
 				) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())`,
 			)
 				.bind(
-					crypto.randomUUID(),
+					ulid(),
 					runId,
 					entity.entityId,
 					entity.sourceId,

@@ -2,14 +2,14 @@
 
 **Date:** April 24, 2026  
 **Version:** v0.1.2  
-**Status:** Production Ready — Hardened, Audited & Validated  
+**Status:** Production Ready — Hardened, Audited, Validated & SDK-Native Compliant  
 **Repository:** https://github.com/Boring-Works/uplink-connect
 
 ---
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 483 tests pass, and it is actively processing real data from a live public API source.
+Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion platform** with comprehensive observability, testing, and documentation. The system is deployed to Cloudflare Workers, all 483 tests pass, and it is actively processing real data from 4 live public API sources.
 
 ### Live Deployment
 - **Dashboard:** https://uplink-core.codyboring.workers.dev/dashboard
@@ -85,7 +85,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Source soft-delete with retention
 - ✅ Audit logging for all operations
 
-#### Testing (500+ Tests)
+#### Testing (483+ Tests)
 - ✅ 292 core unit tests (lib modules, DOs, processing, retry, metrics)
 - ✅ 35 integration tests (coordinator, workflows, pipeline, replay, recovery)
 - ✅ 6 e2e tests (full flows)
@@ -223,7 +223,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 | TypeScript Source Files | 47 |
 | Test Files | 33 |
 | Lines of Code | ~19,655 (TypeScript) |
-| Test Coverage | 587 tests |
+| Test Coverage | 483 tests |
 | Migrations | 11 |
 | Live Data Sources | 4 (USGS, GitHub, HN, exchange rates) |
 | Secrets Configured | CORE_INTERNAL_KEY, INGEST_API_KEY, BROWSER_API_KEY, DASHBOARD_PASSWORD |
@@ -249,7 +249,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ Core worker refactored into 15 route modules
 - ✅ CI/CD pipeline configured
 - ✅ Synthetic monitoring active
-- ✅ 2 new Durable Objects (DashboardStreamDO, ErrorAgentDO)
+- ✅ 5 Durable Objects all SQL-backed (SourceCoordinator, BrowserManagerDO, NotificationDispatcher, DashboardStreamDO, ErrorAgentDO)
 - ✅ WebSocket hibernation for real-time features
 - ✅ DO alarms replace setInterval in all DOs
 - ✅ Constant-time auth comparisons across all workers
@@ -268,6 +268,10 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 - ✅ URL credential sanitization — strips `user:pass` and redacts sensitive query params
 - ✅ Rate limit header parsing — OpenAI, Anthropic, and standard RFC formats
 - ✅ `fetchWithCache` — GET caching, exponential backoff, transient error retry, rate-limit wait handling, bounded to 100 cached entries
+- ✅ ULID IDs — All identifiers use `ulid()` from `ulidx` via `@uplink/contracts`
+- ✅ File upload streaming — Large files stream to R2 without memory loading
+- ✅ `AbortSignal.any()` — Collection workflow respects caller abort signals
+- ✅ `timingSafeEqual` — All token comparisons use constant-time comparison
 - ✅ D1 metrics aggregation — single GROUP BY query with JSON aggregation for metadata counts
 - ✅ `retryWithDeduplication` — collect unique items across repeated operations
 - ✅ `sampleArray` — random sampling utility
@@ -326,7 +330,7 @@ Uplink Connect v3.01 is a **production-ready, Cloudflare-native data ingestion p
 
 Uplink Connect v3.01 is **production-ready** with:
 - ✅ Complete feature set
-- ✅ Comprehensive testing (500+)
+- ✅ Comprehensive testing (483+)
 - ✅ Full observability
 - ✅ Extensive documentation
 - ✅ Clean, maintainable code
@@ -340,6 +344,16 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 **Status:** ✅ PRODUCTION READY — LIVE VALIDATED
 
 ---
+
+## Recent Changes (April 23, 2026)
+
+### SDK-Native Standards Audit
+- **ULID migration complete** — All 52 instances of `crypto.randomUUID()` replaced with `ulid()` from `ulidx` via `@uplink/contracts`
+- **File upload streaming** — Files >5MB stream directly to R2 without loading into memory
+- **ErrorAgentDO `timingSafeEqual`** — Replaced manual comparison with constant-time `timingSafeEqual` from `@uplink/contracts`
+- **Collection workflow signal respect** — `fetchFn` combines timeout and caller abort signals via `AbortSignal.any()`
+- **AI SDK v6 patterns verified** — `streamText`, `embed`, `onFinish`, `textStream` all confirmed correct
+- **Workers best practices verified** — `waitUntil` correct, no destructuring, no module-level mutable state issues
 
 ## Recent Changes (April 24, 2026)
 
@@ -435,4 +449,4 @@ The platform is ready for daily use and can reliably ingest, process, and track 
 
 ### Documentation
 - **OpenAPI 3.0 Spec**: Complete API specification at `openapi.yml`
-- **409 Tests**: All passing across unit, integration, e2e, and utility suites
+- **483 Tests**: All passing across unit, contracts, normalizers, and source-adapters suites

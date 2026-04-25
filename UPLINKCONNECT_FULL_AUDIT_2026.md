@@ -1,6 +1,6 @@
 # UplinkConnect v3.01 — Full Architecture & SDK Audit
 
-**Date:** 2026-04-24  
+**Date:** 2026-04-23  
 **Scope:** Comprehensive review of architecture, native SDK utilization, code quality, security, and operational readiness  
 **Auditor:** Kimi Code CLI  
 **Status:** Production (A-)
@@ -14,10 +14,10 @@ UplinkConnect is a sophisticated, production-ready data ingestion platform built
 | Category | Grade | Notes |
 |----------|-------|-------|
 | **Architecture** | A | Clean separation: 4 Workers + 5 DOs + 2 Workflows + D1 + R2 + Vectorize |
-| **Native SDK Usage** | B+ | 12 SDK features now utilized; 6 gaps remain |
+| **Native SDK Usage** | A- | 14 SDK features utilized; SDK-native standards audit complete |
 | **Code Quality** | B+ | Good patterns, some duplication, typed well |
-| **Security** | B | Basic auth present, some gaps in input validation |
-| **Testing** | A- | 287 unit + 35 integration tests, good coverage |
+| **Security** | A- | Auth hardened, SSRF protection, timing-safe comparisons, security headers |
+| **Testing** | A | 292 core unit + 191 package tests, 483 total, all passing |
 | **Observability** | B+ | Analytics Engine, structured logs, health checks |
 | **Operational Readiness** | A- | DLQ, circuit breakers, retries, backpressure all present |
 
@@ -62,9 +62,9 @@ UplinkConnect is a sophisticated, production-ready data ingestion platform built
 | `uplink-browser` | Worker | Production | Puppeteer scraping (separate repo) |
 | `SourceCoordinator` | DO | **SQL-backed** | Lease management, backpressure |
 | `BrowserManagerDO` | DO | **SQL-backed** | Session pool, queue |
-| `ErrorAgentDO` | DO | KV-backed | RAG chat, AI SDK v6 streaming |
-| `DashboardStreamDO` | DO | KV-backed | WebSocket metrics broadcast |
-| `NotificationDispatcher` | DO | KV-backed | Retry queue, rate limiting |
+| `ErrorAgentDO` | DO | SQL-backed | RAG chat, AI SDK v6 streaming, SQLite chat history |
+| `DashboardStreamDO` | DO | SQL-backed | WebSocket metrics broadcast |
+| `NotificationDispatcher` | DO | SQL-backed | Retry queue, rate limiting |
 | `CollectionWorkflow` | Workflow | Active | Source data collection |
 | `RetentionWorkflow` | Workflow | Active | Data lifecycle management |
 

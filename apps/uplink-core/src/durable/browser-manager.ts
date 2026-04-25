@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { ulid } from "@uplink/contracts";
 import type { Env } from "../types";
 
 
@@ -315,7 +316,7 @@ export class BrowserManagerDO extends DurableObject<Env> {
 
     if (activeCount < CONFIG.maxSessions) {
       // Create new session
-      const sessionId = crypto.randomUUID();
+      const sessionId = ulid();
       this.sql.exec(
         `INSERT INTO sessions (session_id, status, assigned_to, assigned_at, last_used_at, created_at, error_count)
          VALUES (?, 'assigned', ?, ?, ?, ?, 0)`,

@@ -1,3 +1,5 @@
+import { ulid } from "@uplink/contracts";
+
 export interface SourceSchedule {
 	scheduleId: string;
 	sourceId: string;
@@ -114,7 +116,7 @@ export async function createSourceSchedule(
 	db: D1Database,
 	input: CreateScheduleInput,
 ): Promise<SourceSchedule> {
-	const scheduleId = crypto.randomUUID();
+	const scheduleId = ulid();
 	const now = Math.floor(Date.now() / 1000);
 
 	await db

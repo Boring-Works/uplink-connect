@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { ulid } from "@uplink/contracts";
 import type { Env, RuntimeSnapshot } from "../types";
 import { writeCoordinatorMetrics } from "../lib/metrics";
 
@@ -277,7 +278,7 @@ export class SourceCoordinator extends DurableObject<Env> {
 
 		// Grant lease
 		const ttl = Math.max(1, Math.min(payload.ttlSeconds || 300, 3600));
-		const leaseToken = crypto.randomUUID();
+		const leaseToken = ulid();
 		const sourceId = payload.sourceId ?? this.snapshot.sourceId;
 
 		this.snapshot = {

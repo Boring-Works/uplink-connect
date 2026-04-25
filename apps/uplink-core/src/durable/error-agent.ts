@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { embed, streamText } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
+import { timingSafeEqual } from "@uplink/contracts";
 import type { Env } from "../types";
 
 interface ChatMessage {
@@ -141,16 +142,7 @@ export class ErrorAgentDO extends DurableObject<Env> {
 		if (!token || !this.env.CORE_INTERNAL_KEY) {
 			return false;
 		}
-		// Simple constant-time comparison to prevent timing attacks
-		const expected = this.env.CORE_INTERNAL_KEY;
-		if (token.length !== expected.length) {
-			return false;
-		}
-		let result = 0;
-		for (let i = 0; i < token.length; i++) {
-			result |= token.charCodeAt(i) ^ expected.charCodeAt(i);
-		}
-		return result === 0;
+		return timingSafeEqual(token, this.env.CORE_INTERNAL_KEY);
 	}
 
 	async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {

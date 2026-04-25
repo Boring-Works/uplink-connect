@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createIngestQueueMessage, toIsoNow } from "@uplink/contracts";
+import { createIngestQueueMessage, toIsoNow, ulid } from "@uplink/contracts";
 import {
 	getIngestError,
 	getRun,
@@ -16,11 +16,11 @@ describe("retry recovery", () => {
 		const testEnv = env as Env;
 
 		const envelope = createTestIngestEnvelope({
-			ingestId: `retry-queue-${crypto.randomUUID()}`,
+			ingestId: `retry-queue-${ulid()}`,
 			recordCount: 1,
 		});
 		const message = createIngestQueueMessage(envelope, {
-			requestId: `req-${crypto.randomUUID()}`,
+			requestId: `req-${ulid()}`,
 		});
 
 		const errorId = await recordIngestError(testEnv.CONTROL_DB, {
@@ -52,7 +52,7 @@ describe("retry recovery", () => {
 		const testEnv = env as Env;
 
 		const envelope = createTestIngestEnvelope({
-			ingestId: `retry-envelope-${crypto.randomUUID()}`,
+			ingestId: `retry-envelope-${ulid()}`,
 			recordCount: 2,
 		});
 
@@ -86,7 +86,7 @@ describe("retry recovery", () => {
 		const testEnv = env as Env;
 
 		const envelope = createTestIngestEnvelope({
-			ingestId: `retry-fallback-${crypto.randomUUID()}`,
+			ingestId: `retry-fallback-${ulid()}`,
 			recordCount: 1,
 		});
 

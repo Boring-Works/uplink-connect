@@ -32,7 +32,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | **Durable Objects** | Per-source coordination, leases, cursors | ✅ 5 DOs: SourceCoordinator, BrowserManagerDO, NotificationDispatcher, DashboardStreamDO, ErrorAgentDO | ✅ Aligned |
 | **Queues** | At-least-once buffering, backpressure | ✅ Ingest queue with DLQ, batch processing | ✅ Aligned |
 | **Workflows** | Multi-step collection, retries | ✅ CollectionWorkflow + RetentionWorkflow | ✅ Aligned |
-| **D1** | Operational relational data | ✅ 14 migrations, 17 tables | ✅ Aligned |
+| **D1** | Operational relational data | ✅ 14 migrations, 18 tables | ✅ Aligned |
 | **R2** | Immutable raw artifacts | ✅ Raw bucket with key structure | ✅ Aligned |
 | **Analytics Engine** | High-cardinality metrics | ✅ Full metrics library + synthetic monitoring | ✅ Aligned |
 | **Vectorize** | Semantic search | ✅ Entity indexing + search + error similarity | ✅ Aligned |
@@ -44,7 +44,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 | Tier | Purpose | Implementation | Status |
 |------|---------|----------------|--------|
 | **Tier A: DO** | Runtime coordination | 5 DOs with lease/cursor/failure/notification/stream/AI | ✅ |
-| **Tier B: D1** | Operational truth | 16 tables: sources, runs, entities, errors, policies, settings, audit | ✅ |
+| **Tier B: D1** | Operational truth | 18 tables: sources, runs, entities, errors, policies, settings, schedules, audit | ✅ |
 | **Tier C: R2** | Immutable artifacts | raw/{source}/{day}/{id}.json structure | ✅ |
 | **Tier D: Pipelines** | Event lakehouse | Schema defined, binding ready (beta) | ⚠️ |
 | **Tier E: Analytics** | Metrics telemetry | Comprehensive metrics + synthetic cron | ✅ |
@@ -99,11 +99,11 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 
 | Category | Tests | Coverage Area |
 |----------|-------|---------------|
-| **Unit tests** | 274 | lib modules, DOs, notifications, chunking, auth, alerting |
+| **Unit tests** | 292 | lib modules, DOs, notifications, chunking, auth, alerting |
 | **Integration tests** | 35 | Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert |
 | **E2E tests** | 6 | Health, dashboard, source registration, ingest/query, replay, browser status |
 | **Worker tests** | 106 | edge (42), ops (32), browser (32) |
-| **Package tests** | 115 | contracts (49), normalizers (37), source-adapters (29) |
+| **Package tests** | 191 | contracts (121), normalizers (37), source-adapters (33) |
 | **Live tests** | 18 | Production endpoint validation |
 
 ### 3.2 Test Infrastructure
@@ -194,7 +194,7 @@ Uplink Connect v3.01 is a **production-ready** Cloudflare-native data ingestion 
 
 ## 5. Database Schema Validation
 
-### 5.1 Migrations (9 files)
+### 5.1 Migrations (14 files)
 
 | Migration | Tables Created | Status |
 |-----------|----------------|--------|

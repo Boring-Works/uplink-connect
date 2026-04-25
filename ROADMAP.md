@@ -2,7 +2,7 @@
 
 ## Current State
 
-Uplink Connect v0.1.1 is **COMPLETE and PRODUCTION-READY**.
+Uplink Connect v0.1.2 is **COMPLETE and PRODUCTION-READY**.
 
 All major workstreams from the original v3.01 plan have been implemented and deployed.
 
@@ -236,18 +236,18 @@ Uplink Connect v1 is **COMPLETE**:
 
 ---
 
-## v0.1.1 Release Summary
+## v0.1.2 Release Summary
 
 ### What's Included
 
 **Core Platform:**
 - Multi-tenant source registry with policies
-- Durable Object-based source coordination (3 DOs)
+- Durable Object-based source coordination (5 DOs, all SQL-backed)
 - WebSocket real-time features (2 DOs)
 - Workflow-driven collection with automatic retries
 - Queue-based async processing with DLQ
-- R2 raw artifact storage and file uploads
-- D1 operational data store (16 tables, 9 migrations)
+- R2 raw artifact storage and file uploads (streaming for large files)
+- D1 operational data store (18 tables, 14 migrations)
 
 **Observability:**
 - Analytics Engine metrics
@@ -292,8 +292,8 @@ Uplink Connect v1 is **COMPLETE**:
 
 ### Data Model
 
-- 16 D1 tables
-- 9 migrations
+- 18 D1 tables
+- 14 migrations
 - Full foreign key relationships
 - Indexed for query performance
 
@@ -357,7 +357,7 @@ Uplink Connect v1 is **COMPLETE**:
 
 ---
 
-## Immediate Next Tasks (Post-v0.1.1)
+## Immediate Next Tasks (Post-v0.1.2)
 
 1. **Build Scheduler Settings UI** - Per-source cron configuration in dashboard (priority: replaces hard-coded triggers)
 2. Monitor production deployment metrics

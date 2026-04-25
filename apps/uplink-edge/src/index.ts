@@ -3,6 +3,7 @@ import {
 	IngestEnvelopeSchema,
 	createIngestQueueMessage,
 	toIsoNow,
+	ulid,
 	verifyWebhookSignature,
 	timingSafeEqual,
 	type IngestEnvelope,
@@ -249,7 +250,7 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 
 	const envelope = {
 		schemaVersion: "1.0" as const,
-		ingestId: crypto.randomUUID(),
+		ingestId: ulid(),
 		sourceId,
 		sourceName: sourceId,
 		sourceType: "webhook" as const,
@@ -262,7 +263,7 @@ app.post("/v1/webhooks/:sourceId", async (c) => {
 	};
 
 	const queueMessage = createIngestQueueMessage(envelope, {
-		requestId: c.req.header("cf-ray") ?? c.req.header("x-request-id") ?? crypto.randomUUID(),
+		requestId: c.req.header("cf-ray") ?? c.req.header("x-request-id") ?? ulid(),
 	});
 
 	try {
@@ -342,27 +343,42 @@ app.post("/v1/files/:sourceId", async (c) => {
 			continue;
 		}
 
-		const ingestId = crypto.randomUUID();
+		const ingestId = ulid();
 		const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
 		const key = `uploads/${sourceId}/${ingestId}/${safeName}`;
-		const buffer = await file.arrayBuffer();
+		const STREAMING_THRESHOLD = 5 * 1024 * 1024;
+		let contentHash: string;
 
 		try {
-			await c.env.RAW_BUCKET.put(key, buffer, {
-				httpMetadata: { contentType: file.type || "application/octet-stream" },
-				customMetadata: {
-					sourceId,
-					fileName: safeName,
-					ingestId,
-					uploadedAt: toIsoNow(),
-				},
-			});
+			if (file.size <= STREAMING_THRESHOLD) {
+				const buffer = await file.arrayBuffer();
+				await c.env.RAW_BUCKET.put(key, buffer, {
+					httpMetadata: { contentType: file.type || "application/octet-stream" },
+					customMetadata: {
+						sourceId,
+						fileName: safeName,
+						ingestId,
+						uploadedAt: toIsoNow(),
+					},
+				});
+				contentHash = await computeBufferHash(buffer);
+			} else {
+				// Stream large files directly to R2 without loading into memory
+				await c.env.RAW_BUCKET.put(key, file.stream(), {
+					httpMetadata: { contentType: file.type || "application/octet-stream" },
+					customMetadata: {
+						sourceId,
+						fileName: safeName,
+						ingestId,
+						uploadedAt: toIsoNow(),
+					},
+				});
+				contentHash = "";
+			}
 		} catch (err) {
 			failed.push({ fileName: file.name, reason: err instanceof Error ? err.message : "R2 upload failed" });
 			continue;
 		}
-
-		const contentHash = await computeBufferHash(buffer);
 
 		const envelope: IngestEnvelope = {
 			schemaVersion: "1.0",
@@ -388,7 +404,7 @@ app.post("/v1/files/:sourceId", async (c) => {
 		};
 
 		const queueMessage = createIngestQueueMessage(envelope, {
-			requestId: c.req.header("x-request-id") ?? crypto.randomUUID(),
+			requestId: c.req.header("x-request-id") ?? ulid(),
 		});
 
 		try {
@@ -458,7 +474,7 @@ function ensureDefaults(payload: unknown): IngestEnvelope {
 
 	return {
 		schemaVersion: "1.0",
-		ingestId: incoming.ingestId ?? crypto.randomUUID(),
+		ingestId: incoming.ingestId ?? ulid(),
 		sourceId: incoming.sourceId ?? "unknown",
 		sourceName: incoming.sourceName ?? "Unknown Source",
 		sourceType: incoming.sourceType ?? "api",

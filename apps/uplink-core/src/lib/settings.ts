@@ -1,4 +1,4 @@
-import { safeJsonStringify } from "@uplink/contracts";
+import { safeJsonStringify, ulid } from "@uplink/contracts";
 import type { Env } from "../types";
 
 export interface PlatformSettings {
@@ -178,7 +178,7 @@ export async function logAuditEvent(
 		) VALUES (?, ?, ?, ?, ?, ?, unixepoch())`,
 	)
 		.bind(
-			crypto.randomUUID(),
+			ulid(),
 			event.action,
 			event.actor ?? null,
 			event.resourceType,

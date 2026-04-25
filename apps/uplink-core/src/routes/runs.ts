@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { IngestEnvelopeSchema, createIngestQueueMessage, toIsoNow } from "@uplink/contracts";
+import { IngestEnvelopeSchema, createIngestQueueMessage, toIsoNow, ulid } from "@uplink/contracts";
 import { getRun, listRuns, insertRunIfMissing } from "../lib/db";
 import { getRunTrace } from "../lib/tracing";
 
@@ -62,7 +62,7 @@ app.post("/internal/runs/:runId/replay", async (c) => {
 		return c.json({ error: `Run ${runId} is a placeholder collection record` }, 409);
 	}
 
-	const replayRunId = `replay:${runId}:${crypto.randomUUID()}`;
+	const replayRunId = `replay:${runId}:${ulid()}`;
 	const replayEnvelope = {
 		...envelope.data,
 		ingestId: replayRunId,
@@ -75,7 +75,7 @@ app.post("/internal/runs/:runId/replay", async (c) => {
 
 	await c.env.INGEST_QUEUE.send(
 		createIngestQueueMessage(replayEnvelope, {
-			requestId: c.req.header("x-request-id") ?? crypto.randomUUID(),
+			requestId: c.req.header("x-request-id") ?? ulid(),
 		}),
 	);
 

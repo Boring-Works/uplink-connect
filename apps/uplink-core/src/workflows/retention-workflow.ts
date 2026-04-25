@@ -2,6 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent } from "cloudflare:workers";
 import {
 	RetentionWorkflowParamsSchema,
 	toIsoNow,
+	ulid,
 	type RetentionWorkflowParams,
 } from "@uplink/contracts";
 import type { Env } from "../types";
@@ -235,7 +236,7 @@ export class RetentionWorkflow extends WorkflowEntrypoint<Env, RetentionWorkflow
 					) VALUES (?, ?, ?, ?, unixepoch())
 					ON CONFLICT(log_id) DO NOTHING`
 				)
-					.bind(crypto.randomUUID(), runId, "archived", JSON.stringify({ archivedAt: toIsoNow() }))
+					.bind(ulid(), runId, "archived", JSON.stringify({ archivedAt: toIsoNow() }))
 					.run();
 
 				archived++;
@@ -312,7 +313,7 @@ export class RetentionWorkflow extends WorkflowEntrypoint<Env, RetentionWorkflow
 					log_id, run_id, action, details_json, created_at
 				) VALUES (?, ?, ?, ?, unixepoch())`
 			)
-				.bind(crypto.randomUUID(), runId, action, JSON.stringify(details))
+				.bind(ulid(), runId, action, JSON.stringify(details))
 				.run();
 		} catch (error) {
 			// Non-fatal: log to console but don't fail the workflow

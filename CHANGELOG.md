@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2026-04-24
 
+### SDK-Native Standards Audit
+
+- **ULID migration** — Replaced all 52 instances of `crypto.randomUUID()` with `ulid()` from `ulidx` per Boring Stack conventions
+  - Added `ulidx` dependency to `packages/contracts` with re-export for shared use
+  - Updated 23 production code instances across 12 files (edge, core, contracts)
+  - Updated 29 test file instances across 6 test files
+  - Zero UUID v4 instances remain in codebase
+- **File upload streaming** — Large files (>5MB) now stream directly to R2 via `file.stream()` without loading into memory
+  - Small files (<=5MB) continue using `arrayBuffer()` with SHA-256 hash computation
+  - Prevents Worker OOM on multi-file bulk uploads
+- **ErrorAgentDO token validation** — Replaced manual char-code comparison with `timingSafeEqual` from `@uplink/contracts`
+  - Eliminates length-leakage timing attack vector
+  - Consistent with auth patterns across all workers
+- **Collection workflow fetch signal respect** — `fetchFn` now combines timeout `AbortSignal` with caller-provided signal via `AbortSignal.any()`
+  - Prevents premature abort when upstream already passes an abort signal
+- **AI SDK v6 verified** — `streamText`, `embed`, `onFinish`, `textStream` all use correct v6 APIs
+- **Workers best practices verified** — `waitUntil` usage correct (no destructuring), no module-level mutable state beyond documented rate limiter
+
 ### Production Validation & Hardening
 
 - **Dashboard auth body parsing fix** — Only parse form data when Content-Type is `multipart/form-data` or `application/x-www-form-urlencoded`; prevents JSON POSTs from causing 401 loops
@@ -14,8 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ops proxy auth hardening** — Added missing `CORE_INTERNAL_KEY` check in `proxyToCore()`; fails closed with 500 instead of proxying unauthenticated requests
 - **Smoke test fixes** — Updated URLs from `boringworks.workers.dev` to `codyboring.workers.dev`; added handling for 404 responses from internal-only workers
 - **Production validation report** — Comprehensive live endpoint verification, D1 state check, security audit, and sign-off documented in `PRODUCTION_VALIDATION_REPORT.md`
-
-## [0.1.2] - 2026-04-23
 
 ### Security & Hardening
 
@@ -77,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `permanentlyDeleteSource` now cleans up `source_schedules`, `source_metrics_5min`, `source_metrics_daily`, `source_auth_refs`
   - Fixed scheduler HTML `nextRunText` string literal
 
-- **Test Count**: 652 passing across all suites
+- **Test Count**: 483 passing across all suites
 
 ### Dependencies
 
@@ -140,7 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added 35+ new tests across all suites
 - Added 43 new utility tests in `@uplink/contracts` for safe JSON, sanitization, and HTTP error classification
 - Added 10 new integration tests in core for logging sanitization and HTTP-status-based retry logic
-- Total test count: 587+ (up from 519)
+- Total test count: 483+ (up from 409)
 
 #### Real Data Sources
 - **Multi-source public API ingestion** - 4 live sources proving platform versatility
@@ -261,7 +277,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dry-run support
 
 #### Data Model
-- **D1 Migrations (9 total)**
+- **D1 Migrations (14 total)**
   - `source_configs` - Source registry
   - `source_policies` - Rate limits and retry policy
   - `source_capabilities` - Feature flags

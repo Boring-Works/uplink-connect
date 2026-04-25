@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { IngestEnvelopeSchema, IngestQueueMessageSchema } from "@uplink/contracts";
+import { IngestEnvelopeSchema, IngestQueueMessageSchema, ulid } from "@uplink/contracts";
 import { extractSearchableText, buildVectorMetadata } from "../../lib/vectorize";
 
 describe("fuzz / property tests", () => {
@@ -27,14 +27,14 @@ describe("fuzz / property tests", () => {
 	function randomEnvelope(): Record<string, unknown> {
 		return {
 			schemaVersion: "1.0",
-			ingestId: crypto.randomUUID(),
+			ingestId: ulid(),
 			sourceId: randomString(8),
 			sourceName: randomString(10),
 			sourceType: ["api", "webhook", "file", "browser", "email", "manual"][Math.floor(Math.random() * 6)],
 			collectedAt: new Date(Date.now() - Math.floor(Math.random() * 86400000)).toISOString(),
 			records: Array.from({ length: 1 + Math.floor(Math.random() * 19) }, randomRecord),
 			hasMore: Math.random() > 0.8,
-			traceId: Math.random() > 0.3 ? crypto.randomUUID() : undefined,
+			traceId: Math.random() > 0.3 ? ulid() : undefined,
 			metadata: Math.random() > 0.5 ? { tag: randomString(5) } : undefined,
 		};
 	}
@@ -51,7 +51,7 @@ describe("fuzz / property tests", () => {
 			const msg = {
 				envelope: randomEnvelope(),
 				receivedAt: new Date().toISOString(),
-				requestId: crypto.randomUUID(),
+				requestId: ulid(),
 			};
 			expect(IngestQueueMessageSchema.safeParse(msg).success).toBe(true);
 		}
@@ -74,7 +74,7 @@ describe("fuzz / property tests", () => {
 			const obj: Record<string, unknown> = { name: randomString(10) };
 			if (key !== "other") obj[key] = randomString(6);
 			const entity = {
-				entityId: crypto.randomUUID(),
+				entityId: ulid(),
 				sourceId: randomString(8),
 				externalId: randomString(8),
 				contentHash: randomString(16),
@@ -126,7 +126,7 @@ describe("fuzz / property tests", () => {
 		for (const t of ["api", "webhook", "file", "browser", "email", "manual"]) {
 			const envelope = {
 				schemaVersion: "1.0",
-				ingestId: crypto.randomUUID(),
+				ingestId: ulid(),
 				sourceId: "src-1",
 				sourceName: "Test",
 				sourceType: t,

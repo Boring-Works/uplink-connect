@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { toIsoNow, SourceConfigSchema } from "@uplink/contracts";
+import { toIsoNow, ulid, SourceConfigSchema } from "@uplink/contracts";
 import { upsertSourceConfig } from "../../lib/db";
 import { fetchMock } from "cloudflare:test";
 import {
@@ -90,7 +90,7 @@ describe("collection workflow", () => {
 			const { env } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `test-source-${crypto.randomUUID()}`;
+			const sourceId = `test-source-${ulid()}`;
 			await createTestSource(testEnv, sourceId);
 
 			const coordinator = getCoordinatorStub(testEnv, sourceId);
@@ -122,7 +122,7 @@ describe("collection workflow", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `trigger-source-${crypto.randomUUID()}`;
+			const sourceId = `trigger-source-${ulid()}`;
 			await createTestSource(testEnv, sourceId);
 
 			mockApiData({
@@ -162,7 +162,7 @@ describe("collection workflow", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `nonexistent-${crypto.randomUUID()}`;
+			const sourceId = `nonexistent-${ulid()}`;
 
 			const response = await SELF.fetch(
 				`http://localhost/internal/sources/${sourceId}/trigger`,
@@ -187,7 +187,7 @@ describe("collection workflow", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `paused-source-${crypto.randomUUID()}`;
+			const sourceId = `paused-source-${ulid()}`;
 			await createTestSource(testEnv, sourceId, { status: "paused" });
 
 			const response = await SELF.fetch(
@@ -213,7 +213,7 @@ describe("collection workflow", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `paused-force-${crypto.randomUUID()}`;
+			const sourceId = `paused-force-${ulid()}`;
 			await createTestSource(testEnv, sourceId, { status: "paused" });
 
 			mockApiData({
@@ -253,7 +253,7 @@ describe("collection workflow", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `lease-test-${crypto.randomUUID()}`;
+			const sourceId = `lease-test-${ulid()}`;
 			await createTestSource(testEnv, sourceId);
 
 			// Check initial state
@@ -291,7 +291,7 @@ describe("collection workflow", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `concurrent-${crypto.randomUUID()}`;
+			const sourceId = `concurrent-${ulid()}`;
 			await createTestSource(testEnv, sourceId);
 
 			// Acquire lease first to simulate an already-running collection

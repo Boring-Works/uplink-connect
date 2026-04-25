@@ -10,6 +10,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
 	createIngestQueueMessage,
 	toIsoNow,
+	ulid,
 	IngestEnvelopeSchema,
 } from "@uplink/contracts";
 import { handleIngestMessage } from "../../lib/processing";
@@ -45,8 +46,8 @@ function createTestEnvelope(overrides: {
 	const now = toIsoNow();
 	return {
 		schemaVersion: "1.0",
-		ingestId: overrides.ingestId ?? `test-ingest-${crypto.randomUUID()}`,
-		sourceId: overrides.sourceId ?? `test-source-${crypto.randomUUID()}`,
+		ingestId: overrides.ingestId ?? `test-ingest-${ulid()}`,
+		sourceId: overrides.sourceId ?? `test-source-${ulid()}`,
 		sourceName: "Test Source",
 		sourceType: "api",
 		collectedAt: now,
@@ -71,7 +72,7 @@ describe("ingest flow", () => {
 
 			const envelope = createTestEnvelope();
 			const message = createIngestQueueMessage(envelope, {
-				requestId: `test-${crypto.randomUUID()}`,
+				requestId: `test-${ulid()}`,
 			});
 
 			// Process the message

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Cloudflare-native data collection and ingestion platform (v0.1.2).
+Cloudflare-native data collection and ingestion platform (v0.1.2). SDK-native standards audit complete.
 
 A production-ready, multi-tenant data ingestion system built entirely on Cloudflare's edge infrastructure. Handles everything from simple webhook intake to complex browser-based collection workflows, with durable execution guarantees and comprehensive observability.
 
@@ -12,6 +12,7 @@ A production-ready, multi-tenant data ingestion system built entirely on Cloudfl
 - TypeScript 5.9+ with strict mode
 - pnpm 10.6+ workspaces
 - Cloudflare Workers + Durable Objects + Workflows + Queues + D1 + R2 + Analytics Engine + Vectorize + Workers AI
+- ULIDs via `ulidx` (Boring Stack convention — never `crypto.randomUUID()`)
 
 ### Service Architecture
 
@@ -46,7 +47,7 @@ uplink-ops       → Protected operations API
 - ✅ Workflow-driven collection with automatic retries
 - ✅ Queue-based async processing with DLQ
 - ✅ R2 raw artifact storage with structured key paths
-- ✅ D1 operational data store (17 tables, 14 migrations)
+- ✅ D1 operational data store (18 tables, 14 migrations)
 - ✅ Entity normalization, deduplication, and relationship linking
 - ✅ Vectorize semantic search
 - ✅ Comprehensive metrics and alerting with Analytics Engine
@@ -64,12 +65,13 @@ uplink-ops       → Protected operations API
 - ✅ Webhook HMAC signature verification
 - ✅ File upload endpoint with multipart/form-data
 - ✅ AST-based code chunking for TS/JS ingestion
-- ✅ 483+ tests passing (292 unit + 35 integration + 6 e2e + 21 live + 121 contracts + 37 normalizers + 33 source-adapters)
+- ✅ 483+ tests passing (292 core unit + 121 contracts + 37 normalizers + 33 source-adapters)
 
 ### API Surface
 
 - **uplink-edge**: 4 endpoints (public)
 - **uplink-core**: 50+ endpoints (internal)
+- **SDK-native audit**: ULIDs, streaming uploads, `AbortSignal.any()`, `timingSafeEqual` everywhere
 - **uplink-ops**: 7 endpoints (protected)
 - **uplink-browser**: 2 endpoints (internal)
 
@@ -163,7 +165,7 @@ UplinkConnect/
 
 ## Database Schema (D1)
 
-### Tables (16 total)
+### Tables (18 total)
 
 1. **source_configs** - Source registry
 2. **source_policies** - Rate limits and retry config
@@ -263,14 +265,12 @@ BROWSER_API_KEY=browser-dev-key
 
 - **Framework**: Vitest with @cloudflare/vitest-pool-workers
 - **Test Files**: 33+ test files across all workspaces
-- **Total Tests**: 483+ passing (292 unit + 35 integration + 6 e2e + 21 live + 121 contracts + 37 normalizers + 33 source-adapters)
+- **Total Tests**: 483+ passing (292 core unit + 121 contracts + 37 normalizers + 33 source-adapters)
 - **Coverage Areas**:
-  - Unit tests: lib modules, DOs, notifications, chunking
-  - Integration: Source coordinator, workflows, ingest pipeline, retry recovery, replay/upsert
-  - E2E: Health, dashboard, source registration, ingest/query, replay, browser status
-  - Live: Production endpoint validation
-  - Worker tests: edge (42), ops (32), browser (32)
-  - Package tests: contracts (49), normalizers (37), source-adapters (29)
+  - Core unit tests: lib modules, DOs, notifications, chunking, auth, alerting
+  - Contracts tests: Zod schemas, utilities, sanitization, HTTP classification
+  - Normalizers tests: Entity normalization, code chunking
+  - Source-adapters tests: API, webhook, browser adapters
 
 ## Deployment
 

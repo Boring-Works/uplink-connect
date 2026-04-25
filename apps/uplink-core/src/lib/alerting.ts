@@ -1,3 +1,4 @@
+import { ulid } from "@uplink/contracts";
 import type { Env } from "../types";
 import type { ProviderWithId, NotificationRoute } from "./notifications/types";
 
@@ -210,7 +211,7 @@ export async function createAlert(
 	alertConfig?: AlertConfiguration,
 	sourceName?: string,
 ): Promise<{ created: boolean; alertId?: string; notifications?: { sent: number; failed: number; throttled: number; errors: string[] } }> {
-	const alertId = crypto.randomUUID();
+	const alertId = ulid();
 	const dedupKey = getAlertKey(
 		alert.alertType,
 		alert.severity,

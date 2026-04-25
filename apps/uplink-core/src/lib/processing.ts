@@ -6,6 +6,7 @@ import {
 	createIngestQueueMessage,
 	safeJsonStringify,
 	toIsoNow,
+	ulid,
 	type IngestQueueMessage,
 	type RetryAttempt,
 } from "@uplink/contracts";
@@ -531,7 +532,7 @@ export async function retryFailedOperation(
 	const sourceId = error.source_id as string | null;
 	const phase = error.phase as string;
 
-	const retryAttemptId = crypto.randomUUID();
+	const retryAttemptId = ulid();
 	const retryAttempt: RetryAttempt = {
 		attemptNumber: retryCount + 1,
 		timestamp: toIsoNow(),

@@ -61,7 +61,10 @@ export class CollectionWorkflow extends WorkflowEntrypoint<Env, CollectionWorkfl
 					fetchFn: (input: RequestInfo | URL, init?: RequestInit) => {
 						const controller = new AbortController();
 						const timer = setTimeout(() => controller.abort(), timeoutMs);
-						return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+						const signal = init?.signal
+							? AbortSignal.any([init.signal, controller.signal])
+							: controller.signal;
+						return fetch(input, { ...init, signal }).finally(() => clearTimeout(timer));
 					},
 					browserFetcher: this.env.UPLINK_BROWSER,
 					nowIso: toIsoNow,

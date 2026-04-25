@@ -35,7 +35,7 @@
 | **Minor gaps** (quality-of-life improvements) | 4 | Low-Medium |
 | **Already well-utilized** | 14 | — |
 
-**The single biggest gap:** UplinkConnect does not use the **Agents SDK** at all. The custom `ErrorAgentDO` (~239 lines), `DashboardStreamDO`, and `NotificationDispatcher` are all hand-rolled Durable Objects that duplicate capabilities the Agents SDK provides natively.
+**The single biggest gap:** UplinkConnect does not use the **Agents SDK** at all. The custom `ErrorAgentDO` (~443 lines), `DashboardStreamDO`, and `NotificationDispatcher` are all hand-rolled Durable Objects that duplicate capabilities the Agents SDK provides natively. All 5 DOs are now SQL-backed.
 
 ---
 
@@ -233,21 +233,17 @@ CREATE INDEX idx_source_type ON source_configs(source_type);
 
 ---
 
-### 5. Durable Objects SQL API — Using KV Storage on SQLite-backed DOs ✅ PARTIAL
+### 5. Durable Objects SQL API — Using KV Storage on SQLite-backed DOs ✅ DONE
 
-**What you have:** All 5 DOs use `ctx.storage.put/get` (KV API) despite being SQLite-backed:
+**What you have:** All 5 DOs migrated to DO SQL API with proper SQLite tables and schema versioning:
 
-**Status:** `BrowserManagerDO` migrated to DO SQL API with `sessions`, `session_queue`, and `stats` tables. Remaining DOs (`SourceCoordinator`, `ErrorAgentDO`, `DashboardStreamDO`, `NotificationDispatcher`) still use KV storage.
-- `SourceCoordinator`: `SNAPSHOT_KEY` + `BACKPRESSURE_KEY` as blob values
-- `ErrorAgentDO`: `MESSAGES_KEY` as serialized array
-- Others likely similar
+- `BrowserManagerDO`: `sessions`, `session_queue`, `stats` tables
+- `ErrorAgentDO`: `chat_messages` table with schema versioning
+- `NotificationDispatcher`: `retry_queue`, `rate_limits` tables
+- `DashboardStreamDO`: `events` table
+- `SourceCoordinator`: `snapshot` and `backpressure` tables
 
-**What you're missing:** SQLite-backed DOs have a full SQL engine:
-
-```typescript
-// BEFORE: Blob storage
-await this.ctx.storage.put(SNAPSHOT_KEY, this.snapshot);
-const stored = await this.ctx.storage.get<RuntimeSnapshot>(SNAPSHOT_KEY);
+**What you're missing:** Nothing — all DOs use the full SQL engine. Continuing patterns used:
 
 // AFTER: SQL with schema, indexes, queries
 this.ctx.storage.sql.exec(`
@@ -493,7 +489,7 @@ const result = await stmt.run();
 ```typescript
 // In processing.ts
 export async function handleIngestMessage(env: Env, message: IngestQueueMessage) {
-  const traceId = message.requestId || crypto.randomUUID();
+  const traceId = message.requestId || ulid();
   // Workers runtime automatically creates spans, but custom spans give granularity
   
   // Currently: no visibility into which step is slow

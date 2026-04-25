@@ -1,6 +1,6 @@
 # Uplink Connect v3.01 — Hardening & Improvement Review
 
-**Date:** 2026-04-24
+**Date:** 2026-04-23
 **Scope:** Security, reliability, performance, observability, and maintainability
 **Status:** Production-hardened baseline with actionable next steps
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestion platform** with 483+ passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 24 hardening pass and identifies **remaining gaps** for future iterations.
+Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestion platform** with 483+ passing tests, proper auth patterns, circuit breakers, idempotency, resilient DLQ handling, and comprehensive observability. This review documents **verified fixes** from April 23-24 hardening pass and identifies **remaining gaps** for future iterations.
 
 **Bottom line:** The platform is safe for current usage. The items below are about resilience under abuse, cost protection at scale, and operational confidence.
 
@@ -38,19 +38,19 @@ Uplink Connect v3.01 is a **production-hardened, Cloudflare-native data ingestio
 ### 1.2 File Upload Has Size Limits
 **Risk:** An authenticated client can upload multi-GB files directly to R2, incurring storage costs and potentially causing Worker CPU timeouts during hash computation.
 
-**Status:** ✅ **ALREADY ADDRESSED** — Multiple size limits in place
+**Status:** ✅ **ADDRESSED** — Size limits + streaming for large files
 
-**Evidence (outdated):**
-- `uplink-edge/src/index.ts:229` — `const buffer = await file.arrayBuffer()` loads entire file into memory
-- `uplink-edge/src/index.ts:241` — `computeBufferHash(buffer)` hashes the entire buffer
-- No Content-Length validation, no max file size check
+**Evidence:**
+- `uplink-edge/src/index.ts` — `const buffer = await file.arrayBuffer()` loads entire file into memory
+- `computeBufferHash(buffer)` hashes the entire buffer
 
-**Current Protection:**
+**Fixes Applied:**
 - `/v1/intake` — `Content-Length` validated, max 10MB body
 - `/v1/files/:sourceId` — Max 10 files per upload, max 50MB per file
 - File names sanitized (`replace(/[^a-zA-Z0-9._-]/g, "_")`)
+- **Streaming threshold (April 23)** — Files >5MB stream directly to R2 via `file.stream()` without loading into memory; files <=5MB use `arrayBuffer()` with hash
 
-**Priority:** P0 — Already mitigated.
+**Priority:** P0 — Mitigated.
 
 ---
 
@@ -283,19 +283,17 @@ Split into:
 
 ---
 
-### 3.4 Notification Dispatcher Lacks Persistence
+### 3.4 Notification Dispatcher Persistence
 **Risk:** `NotificationDispatcher` stores retry queue in memory. If the DO hibernates or is evicted, pending retries are lost.
 
+**Status:** ✅ **FIXED** — Migrated to DO SQL API with SQLite tables
+
 **Evidence:**
-- `notification-dispatcher.ts:29-30` — `rateLimits` and `retryQueue` are in-memory Maps/arrays
-- No `ctx.storage.put` for retry queue state
-- Alarm reschedules but queue contents don't survive hibernation
+- `notification-dispatcher.ts` — Now uses `retry_queue` and `rate_limits` SQLite tables
+- `blockConcurrencyWhile` wraps all mutating operations
+- Queue state persists across hibernation and evictions
 
-**Fix:**
-- Persist retry queue to DO storage on every `enqueueRetry`
-- Restore from storage in constructor via `blockConcurrencyWhile`
-
-**Priority:** P2 — Alert reliability during DO eviction.
+**Priority:** P2 — Resolved.
 
 ---
 

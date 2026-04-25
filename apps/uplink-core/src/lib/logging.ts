@@ -1,5 +1,5 @@
 import type { Env } from "../types";
-import { sanitizeObject } from "@uplink/contracts";
+import { sanitizeObject, ulid } from "@uplink/contracts";
 
 /**
  * Structured Logging with OpenTelemetry-style spans
@@ -231,11 +231,11 @@ export function injectContextIntoRequest(
 }
 
 function generateTraceId(): string {
-	return crypto.randomUUID().replace(/-/g, "");
+	return ulid();
 }
 
 function generateSpanId(): string {
-	return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+	return ulid().slice(0, 16);
 }
 
 // Global logger instances per service

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toIsoNow } from "@uplink/contracts";
+import { toIsoNow, ulid } from "@uplink/contracts";
 import { getRun, insertRunIfMissing } from "../../lib/db";
 import { createTestIngestEnvelope } from "./fixtures";
 import type { Env } from "../../types";
@@ -7,7 +7,7 @@ import type { Env } from "../../types";
 async function seedRun(env: Env, params: { runId: string; status: string; envelopeJson?: string }) {
 	const envelope = createTestIngestEnvelope({
 		ingestId: params.runId,
-		sourceId: `source-${crypto.randomUUID()}`,
+		sourceId: `source-${ulid()}`,
 		sourceName: "Replay Test Source",
 		recordCount: 1,
 	});
@@ -40,7 +40,7 @@ describe("replay and run upsert", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const runId = `run-in-progress-${crypto.randomUUID()}`;
+			const runId = `run-in-progress-${ulid()}`;
 			await seedRun(testEnv, { runId, status: "collecting" });
 
 			const response = await SELF.fetch(`http://localhost/internal/runs/${runId}/replay`, {
@@ -59,10 +59,10 @@ describe("replay and run upsert", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const runId = `run-placeholder-${crypto.randomUUID()}`;
+			const runId = `run-placeholder-${ulid()}`;
 			const envelope = createTestIngestEnvelope({
 				ingestId: runId,
-				sourceId: `source-${crypto.randomUUID()}`,
+				sourceId: `source-${ulid()}`,
 				sourceName: "Placeholder Source",
 				recordCount: 1,
 			});
@@ -100,7 +100,7 @@ describe("replay and run upsert", () => {
 			const { env, SELF } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const runId = `run-invalid-json-${crypto.randomUUID()}`;
+			const runId = `run-invalid-json-${ulid()}`;
 			await seedRun(testEnv, {
 				runId,
 				status: "normalized",
@@ -125,8 +125,8 @@ describe("replay and run upsert", () => {
 			const { env } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `source-${crypto.randomUUID()}`;
-			const runId = `collect:${sourceId}:${crypto.randomUUID()}`;
+			const sourceId = `source-${ulid()}`;
+			const runId = `collect:${sourceId}:${ulid()}`;
 
 			const placeholderEnvelope = createTestIngestEnvelope({
 				ingestId: runId,
@@ -191,8 +191,8 @@ describe("replay and run upsert", () => {
 			const { env } = await import("cloudflare:test");
 			const testEnv = env as Env;
 
-			const sourceId = `source-${crypto.randomUUID()}`;
-			const runId = `terminal:${sourceId}:${crypto.randomUUID()}`;
+			const sourceId = `source-${ulid()}`;
+			const runId = `terminal:${sourceId}:${ulid()}`;
 
 			const originalEnvelope = createTestIngestEnvelope({
 				ingestId: runId,

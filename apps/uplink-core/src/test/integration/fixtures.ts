@@ -4,7 +4,7 @@
  * Shared utilities for integration tests
  */
 
-import { toIsoNow, type IngestEnvelope, type SourceConfig } from "@uplink/contracts";
+import { ulid, toIsoNow, type IngestEnvelope, type SourceConfig } from "@uplink/contracts";
 
 // Test data factories
 export function createTestIngestEnvelope(overrides: {
@@ -17,8 +17,8 @@ export function createTestIngestEnvelope(overrides: {
 	nextCursor?: string;
 } = {}): IngestEnvelope {
 	const now = toIsoNow();
-	const ingestId = overrides.ingestId ?? `test-${crypto.randomUUID()}`;
-	const sourceId = overrides.sourceId ?? `source-${crypto.randomUUID()}`;
+	const ingestId = overrides.ingestId ?? `test-${ulid()}`;
+	const sourceId = overrides.sourceId ?? `source-${ulid()}`;
 
 	return {
 		schemaVersion: "1.0",
@@ -45,7 +45,7 @@ export function createTestRecord(index: number): {
 	const now = toIsoNow();
 	return {
 		externalId: `record-${index}`,
-		contentHash: `hash-${crypto.randomUUID().slice(0, 16)}`,
+		contentHash: `hash-${ulid().slice(0, 16)}`,
 		rawPayload: {
 			id: index,
 			name: `Test Entity ${index}`,
@@ -62,7 +62,7 @@ export function createTestSourceConfig(overrides: {
 	status?: "active" | "paused" | "disabled";
 	endpointUrl?: string;
 } = {}): SourceConfig {
-	const sourceId = overrides.sourceId ?? `source-${crypto.randomUUID()}`;
+	const sourceId = overrides.sourceId ?? `source-${ulid()}`;
 
 	return {
 		sourceId,

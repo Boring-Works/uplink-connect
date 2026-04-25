@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { ulid } from "@uplink/contracts";
 import {
 	getCoordinatorStub,
 	acquireLease,
@@ -20,7 +21,7 @@ import {
 import type { Env } from "../../types";
 
 function getTestSourceId(): string {
-	return `test-source-${crypto.randomUUID()}`;
+	return `test-source-${ulid()}`;
 }
 
 describe("source coordinator", () => {
