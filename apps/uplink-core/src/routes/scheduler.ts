@@ -623,14 +623,15 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 			setTimeout(() => { toast.className = 'toast'; }, 3000);
 		}
 
-		function formatDuration(seconds) {
+		function formatDuration(seconds, suffix) {
+			suffix = suffix || 'ago';
 			if (!seconds || seconds < 60) return 'just now';
 			const mins = Math.floor(seconds / 60);
-			if (mins < 60) return mins + 'm ago';
+			if (mins < 60) return mins + 'm ' + suffix;
 			const hrs = Math.floor(mins / 60);
-			if (hrs < 24) return hrs + 'h ago';
+			if (hrs < 24) return hrs + 'h ' + suffix;
 			const days = Math.floor(hrs / 24);
-			return days + 'd ago';
+			return days + 'd ' + suffix;
 		}
 
 		function getNextRuns(cron, count) {
@@ -766,11 +767,11 @@ function renderSchedulerHtml(p: SchedulerHtmlParams): string {
 				const lastRunText = lastRun ? formatDuration(Math.floor(Date.now() / 1000) - lastRun) : '<span style="color:#9A9A9A">Never</span>';
 				const nextRuns = getNextRuns(sch.cronExpression, 1);
 				const nextRunText = nextRuns.length > 0
-					? formatDuration(Math.floor((nextRuns[0].getTime() - Date.now()) / 1000)).replace('ago', 'remaining')
+					? formatDuration(Math.floor((nextRuns[0].getTime() - Date.now()) / 1000), 'remaining')
 					: '<span style="color:#9A9A9A">—</span>';
 				return '<tr data-index="' + idx + '">' +
 					'<td><input type="checkbox" class="checkbox row-checkbox" data-id="' + sch.scheduleId + '" data-index="' + idx + '"></td>' +
-					'<td><div style="font-weight:600">' + escapeHtml(srcName) + '</div><div class="mono" style="color:#6B6B6B;font-size:0.85rem">' + escapeHtml(sch.sourceId) + '</div><div class="source-health"><span class="badge ' + statusBadge + '">' + srcStatus + '</span></div></td>' +
+					'<td><div style="font-weight:600">' + escapeHtml(srcName) + '</div><div class="mono" style="color:#6B6B6B;font-size:0.85rem">' + escapeHtml(sch.sourceId) + '</div><div class="source-health"><span class="badge ' + statusBadge + '">' + escapeHtml(srcStatus) + '</span></div></td>' +
 					'<td class="mono">' + escapeHtml(sch.cronExpression) + '</td>' +
 					'<td>' + (sch.label ? escapeHtml(sch.label) : '<span style="color:#9A9A9A">—</span>') + '</td>' +
 					'<td>' + lastRunText + '</td>' +

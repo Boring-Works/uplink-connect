@@ -3,7 +3,8 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "worker.ts",
 	"vars": {
-		"CORE_INTERNAL_KEY": "test-key"
+		"CORE_INTERNAL_KEY": "test-key",
+		"DASHBOARD_PASSWORD": "test-dashboard-pass"
 	},
 	"d1_databases": [
 		{

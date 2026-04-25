@@ -1,0 +1,3 @@
+# Local development secrets
+# Copy this file to .dev.vars and fill in your values
+DASHBOARD_PASSWORD=your-local-dashboard-password
